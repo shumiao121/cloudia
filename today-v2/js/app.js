@@ -214,6 +214,23 @@ $('textForm').onsubmit = async e => {
   $('textIn').value = ''; $('textIn').blur(); count('text'); changed();
 };
 
+// ---------- 只在 app 里：四格真截图，点开看大图、去下载 ----------
+const APP_ONLY = {
+  light: ['Light it up', 'Give your drawing sunset, moonlight, dawn or gold — the light comes from the cloud itself.', 'img/app-light.jpg'],
+  judge: ['It says what it sees', 'A little judge on your phone looks at your drawing and guesses what it is. No internet needed.', 'img/app-judge.jpg'],
+  gallery: ['Your own gallery', 'Every drawing is kept, framed and hung in galleries that grow as you draw.', 'img/app-gallery.jpg'],
+  sky: ['Any sky — even yours', 'Point your camera up and draw on today’s sky, or pick from more than a hundred real clouds, winter skies and rainbows.', 'img/app-sky.jpg'],
+};
+for (const b of document.querySelectorAll('.appgrid button')) b.onclick = () => {
+  const [title, line, img] = APP_ONLY[b.dataset.app];
+  $('appTitle').textContent = title; $('appLine').textContent = line; $('appImg').src = img; $('appImg').alt = 'Cloudia app: ' + title;
+  $('appSheet').hidden = false; count('app-' + b.dataset.app);
+};
+$('appClose').onclick = () => { $('appSheet').hidden = true; };
+$('appSheet').onclick = e => { if (e.target === $('appSheet')) $('appSheet').hidden = true; };
+$('appStore').addEventListener('click', () => count('store-tools'));
+if (android) { const a = $('appStore'); a.removeAttribute('href'); a.textContent = 'Cloudia is on iPhone & iPad'; a.style.opacity = .6; }
+
 // ---------- 页签 ----------
 function tab(which) {
   tabNow = which;
@@ -242,6 +259,7 @@ $('askForm').onsubmit = e => {
 // ---------- 键盘（电脑上） ----------
 const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !/^(range|checkbox|color)$/.test(a.type); };
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('appSheet').hidden) { $('appSheet').hidden = true; return; }
   if (e.key === 'Escape') { if (board.tool === 'pick') setTool(lastTool); else if (focused) setFocus(false); return; }
   if (stage !== 'draw' || typing()) return;
   const cmd = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
