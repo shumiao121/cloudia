@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>What do you see in this cloud? · Cloudia</title>
+<meta name="description" content="One real cloud a day — and old skies from the museum. Trace what you see, add some eyes, then see what we saw.">
+<meta property="og:title" content="What do you see in this cloud?">
+<meta property="og:description" content="Trace what you see in a real cloud. Then see what we saw.">
+<meta property="og:image" content="https://shumiao121.github.io/cloudia/today/og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="apple-itunes-app" content="app-id=6818406818">
+<meta name="theme-color" content="#F7F4EC">
+<meta name="robots" content="noindex">
+<!--
+  网页「今天这朵」第二版（11-17）。方案：「云想网页第二版方案」（Claude Docs）、docs/网页引流/第二轮/。
+  一张图、四支笔加橡皮、16 枚眼睛和小零件贴纸；两间屋子（Clouds、Old skies）；分享出「先猜、再翻答案」两张 4:5。
+  不上传任何东西、不放 cookie；画只在这台设备上（Safari 七天不开会清掉）。素材：tools/web/build_today.py。
+  ?i=<图的编号> 打开某一张，?d=2026-11-20 换日期（测试用）。
+-->
+<link rel="stylesheet" href="css/today.css?v=2">
+</head>
+<body>
+<main>
+  <div class="top"><span class="brand">Cloudia</span><span id="date"></span></div>
+
+  <h1 id="ask">What do you see in this cloud?</h1>
+  <p class="sub" id="how">Trace it with your finger.</p>
+
+  <figure id="mine" class="board">
+    <img id="photo" alt="">
+    <div class="hint" id="hint">Draw right on the picture</div>
+  </figure>
+  <p class="caption" id="caption" hidden></p>
+
+  <div class="dock" id="dock">
+    <div class="row tabs">
+      <div class="seg" role="tablist">
+        <button role="tab" id="tabDraw" aria-selected="true">Draw</button>
+        <button role="tab" id="tabStk" aria-selected="false">Stickers</button>
+      </div>
+      <span class="grow"></span>
+      <button class="icon" id="undo" aria-label="Undo" disabled>↶</button>
+      <button class="icon" id="redo" aria-label="Redo" disabled>↷</button>
+    </div>
+    <div id="drawTools">
+      <div class="row pens" id="pens"></div>
+      <div class="row swatches"><div id="colors" class="colors"></div></div>
+    </div>
+    <div id="stkTools" hidden>
+      <div class="tray" id="tray"></div>
+      <p class="small tip">Tap one to add it. Drag to move · pinch or use the corner to size and turn.</p>
+    </div>
+    <div class="row end">
+      <button class="link" id="clear" disabled>Start over</button>
+      <span class="grow"></span>
+      <div id="sizes" class="sizes" aria-label="Line size"></div>
+      <button class="primary" id="done" disabled>Done</button>
+    </div>
+  </div>
+
+  <section id="naming" hidden class="fade">
+    <h2>What is it?</h2>
+    <form class="ask" id="askForm" autocomplete="off">
+      <input id="word" list="words" maxlength="24" placeholder="a whale, a dog, a teapot…" enterkeyhint="done" aria-label="What is it?">
+      <button class="primary" type="submit">That's it</button>
+    </form>
+    <datalist id="words"></datalist>
+    <div class="links"><button class="link" id="skip">Keep it to myself</button><button class="link" id="back">Keep drawing</button></div>
+  </section>
+
+  <section id="reveal" hidden class="fade">
+    <p class="you" id="you"></p>
+    <h2>Here's what we saw</h2>
+    <div class="chips" id="chips"></div>
+    <figure id="ours" class="board">
+      <img id="photo2" alt="">
+      <canvas id="ourInk" class="layer"></canvas>
+    </figure>
+
+    <div class="share">
+      <h2 class="h3">Share it as a little guessing game</h2>
+      <p class="small">Two pictures: first the question, then your answer.</p>
+      <div class="pair" id="pairPreview"></div>
+      <div class="bar">
+        <button class="primary" id="share">Share</button>
+        <button id="save">Save pictures</button>
+      </div>
+    </div>
+
+    <div class="lit">
+      <img src="img/app-lit-shark.jpg" alt="A shark drawn on a cloud in the Cloudia app, lit like moonlight" loading="lazy">
+      <p class="small">In the app, a drawing can light up like this — this shark was drawn in Cloudia and given moonlight.</p>
+    </div>
+    <p class="small" style="margin-top:14px">A new cloud comes tomorrow.</p>
+  </section>
+
+  <section class="rooms" id="rooms">
+    <h2>More to see</h2>
+    <div class="seg" role="tablist" id="roomTabs"></div>
+    <p class="small" id="roomLine"></p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="app" id="app">
+    <h2>Keep drawing on the sky</h2>
+    <ul>
+      <li>Any sky — a winter one, a rainbow one, or the one outside your window.</li>
+      <li>21 brushes, Apple Pencil, layers — and a little judge that tells you what it sees.</li>
+      <li>Light your drawing like sunset or moonlight.</li>
+      <li>Everything you draw, kept in your own gallery. Turn one into a holiday card.</li>
+    </ul>
+    <a class="btn store" id="store" href="https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&amp;ct=web-v2&amp;mt=8">Get Cloudia — free on iPhone &amp; iPad</a>
+    <p class="small" id="notIOS">For iPhone and iPad. Not on Android yet.</p>
+  </section>
+
+  <footer>
+    <span>No sign-up, no cookies. What you draw stays on this device for a while — save the pictures to keep them.</span>
+    <span id="credit"></span>
+    <span><a href="../privacy-en.html">Privacy</a> · <a href="../en.html">Support</a></span>
+  </footer>
+</main>
+
+<div id="sheet" hidden>
+  <div class="sheetPics" id="sheetPics"></div>
+  <p>Press and hold each picture to save it.</p>
+  <button id="closeSheet">Close</button>
+</div>
+
+<script src="manifest.js?v=2"></script>
+<script src="words.js?v=2"></script>
+<script type="module" src="js/app.js?v=2"></script>
+</body>
+</html>
