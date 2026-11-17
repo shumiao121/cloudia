@@ -84,13 +84,15 @@ export class Board {
    * @param {HTMLElement} figure  照片和几层画布的容器（position:relative）
    * @param {HTMLImageElement} photo
    */
-  constructor(figure, photo, { onChange } = {}) {
-    this.figure = figure; this.photo = photo; this.onChange = onChange || (() => {});
+  constructor(figure, photo, { onChange, onZoom } = {}) {
+    this.figure = figure; this.photo = photo; this.onChange = onChange || (() => {}); this.onZoom = onZoom || (() => {});
+    this.box = photo.parentElement;   // .zoomer：照片和几层画布都在它里面，放大、平移只动它
     this.ink = mk('ink'); this.wet = mk('wet'); this.stk = mk('stk'); this.touch = mk('touch');
-    figure.append(this.ink, this.wet, this.stk, this.touch);
+    this.box.append(this.ink, this.wet, this.stk, this.touch);
     this.sel = document.createElement('div'); this.sel.className = 'sel'; this.sel.hidden = true;
     this.sel.innerHTML = '<button class="sel-x" aria-label="Remove sticker">×</button><span class="sel-h" aria-hidden="true"></span>';
-    figure.append(this.sel);
+    this.box.append(this.sel);
+    this.z = { s: 1, x: 0, y: 0 }; this.boost = 1; this.raw = new Map();
     this.strokes = []; this.stickers = [];
     this.history = []; this.future = [];
     this.snaps = [];            // [{n: 笔数, canvas}]
@@ -103,11 +105,13 @@ export class Board {
   }
 
   // ---------- 尺寸 ----------
-  resize() {
-    const r = this.photo.getBoundingClientRect(); if (!r.width) return;
+  resize(boost = this.boost) {
+    const cw = this.photo.offsetWidth, ch = this.photo.offsetHeight; if (!cw) return;
     const dpr = Math.min(devicePixelRatio || 1, 2.5);
-    const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
-    this.cssW = r.width; this.cssH = r.height; this.dpr = dpr;
+    // 放大以后线不糊：画布跟着倍数加像素，但长边不超过 2560（手机上四层画布的内存）
+    this.boost = Math.max(1, Math.min(boost, 2560 / (Math.max(cw, ch) * dpr)));
+    const w = Math.round(cw * dpr * this.boost), h = Math.round(ch * dpr * this.boost);
+    this.cssW = cw; this.cssH = ch; this.dpr = dpr;
     if (this.ink.width === w && this.ink.height === h) { this.renderStickers(); return; }
     for (const c of [this.ink, this.wet, this.stk, this.touch]) { c.width = w; c.height = h; }
     this.snaps = []; this.rebuild(); this.renderStickers();
@@ -215,28 +219,33 @@ export class Board {
   // ---------- 手势 ----------
   _wire() {
     const t = this.touch;
-    const local = e => { const r = t.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const local = e => { const r = t.getBoundingClientRect(); return [(e.clientX - r.left) / this.z.s, (e.clientY - r.top) / this.z.s]; };
     t.addEventListener('pointerdown', e => {
       if (this.mode === 'locked') return;
       e.preventDefault();
       try { t.setPointerCapture(e.pointerId); } catch (_) {}
-      this.pointers.set(e.pointerId, local(e));
-      if (this.mode === 'stickers') return this._stickerDown(e, local(e));
-      if (this.cur) {   // 第二根手指：当捏合，这一笔不算
-        if (e.pointerType === 'touch') { this.cur = null; this.curId = null; this._clearWet(); }
-        return;
+      this.pointers.set(e.pointerId, local(e)); this.raw.set(e.pointerId, [e.clientX, e.clientY]);
+      // 两根手指：画的时候是放大、平移整张图（这一笔作废）；贴纸模式下没选中贴纸时也是
+      if (this.raw.size >= 2 && (this.mode === 'draw' || this.selected < 0)) {
+        if (this.cur) { this.cur = null; this.curId = null; this._clearWet(); if (this._eraseFrom) this.rebuild(); }
+        this._zpStart(); return;
       }
+      if (this._zp) return;
+      if (this.mode === 'stickers') return this._stickerDown(e, local(e));
+      if (this.cur) return;
       this._strokeDown(e, local(e));
     });
     t.addEventListener('pointermove', e => {
       if (!this.pointers.has(e.pointerId)) return;
-      this.pointers.set(e.pointerId, local(e));
+      this.pointers.set(e.pointerId, local(e)); this.raw.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this._zp) return this._zpMove();
       if (this.mode === 'stickers') return this._stickerMove(e);
       if (this.cur && e.pointerId === this.curId) this._strokeMove(e);
     });
     const up = e => {
       if (!this.pointers.has(e.pointerId)) return;
-      this.pointers.delete(e.pointerId);
+      this.pointers.delete(e.pointerId); this.raw.delete(e.pointerId);
+      if (this._zp) { if (this.raw.size < 2) this._zpEnd(); return; }
       if (this.mode === 'stickers') return this._stickerUp(e);
       if (this.cur && e.pointerId === this.curId) this._strokeUp();
     };
@@ -244,8 +253,19 @@ export class Board {
     t.addEventListener('pointercancel', up);
     t.addEventListener('touchstart', e => { if (this.mode !== 'locked') e.preventDefault(); }, { passive: false });
     t.addEventListener('touchmove', e => { if (this.mode !== 'locked') e.preventDefault(); }, { passive: false });
-    t.addEventListener('wheel', e => {   // 电脑上：滚轮缩放选中的贴纸，按住 Shift 转
-      if (this.mode !== 'stickers' || this.selected < 0) return;
+    t.addEventListener('wheel', e => {   // 电脑上：Ctrl+滚轮（触控板捏合）放大；放大以后两指滑动平移；选中贴纸时滚轮缩放贴纸，按住 Shift 转
+      if (this.mode === 'locked') return;
+      if (!(this.mode === 'stickers' && this.selected >= 0)) {
+        const fr = this._figRect();
+        if (e.ctrlKey) {
+          e.preventDefault();
+          const s = clamp(this.z.s * Math.exp(-e.deltaY * 0.01), 1, 5), mx = e.clientX - fr.left, my = e.clientY - fr.top;
+          const cx = (mx - this.z.x) / this.z.s, cy = (my - this.z.y) / this.z.s;
+          this.setZoom(s, mx - cx * s, my - cy * s);
+          clearTimeout(this._wz); this._wz = setTimeout(() => { if (Math.abs(this.z.s - this.boost) > 0.25 || (this.z.s < 1.05 && this.boost > 1)) this.resize(this.z.s); }, 250);
+        } else if (this.z.s > 1) { e.preventDefault(); this.setZoom(this.z.s, this.z.x - e.deltaX, this.z.y - e.deltaY); }
+        return;
+      }
       e.preventDefault(); const s = this.stickers[this.selected];
       if (e.shiftKey) s.r += e.deltaY * 0.004; else s.w = clamp(s.w * Math.exp(-e.deltaY * 0.0015), 0.04, 0.9);
       this.renderStickers(); this._wheelCommit();
@@ -261,7 +281,7 @@ export class Board {
       e.preventDefault(); e.stopPropagation(); if (this.selected < 0) return;
       try { h.setPointerCapture(e.pointerId); } catch (_) {}
       const s = this.stickers[this.selected], r = t.getBoundingClientRect();
-      const cx = r.left + s.x * this.cssW, cy = r.top + s.y * this.cssH;
+      const cx = r.left + s.x * r.width, cy = r.top + s.y * r.height;
       this._handle = { id: e.pointerId, cx, cy, d0: Math.hypot(e.clientX - cx, e.clientY - cy), a0: Math.atan2(e.clientY - cy, e.clientX - cx), w0: s.w, r0: s.r, before: this._stk() };
     });
     h.addEventListener('pointermove', e => {
@@ -280,9 +300,37 @@ export class Board {
     this._wheelT = setTimeout(() => { this._push({ kind: 'stickers', before: this._wheelBefore, after: this._stk() }); this._wheelBefore = null; }, 400);
   }
 
+  // ---------- 放大、平移（两根手指） ----------
+  _figRect() { return this.figure.getBoundingClientRect(); }
+  _zpStart() {
+    const [a, b] = [...this.raw.values()], fr = this._figRect();
+    const m = [(a[0] + b[0]) / 2 - fr.left, (a[1] + b[1]) / 2 - fr.top];
+    this._zp = { d0: Math.max(10, Math.hypot(a[0] - b[0], a[1] - b[1])), s0: this.z.s, c: [(m[0] - this.z.x) / this.z.s, (m[1] - this.z.y) / this.z.s] };
+  }
+  _zpMove() {
+    if (this.raw.size < 2) return;
+    const [a, b] = [...this.raw.values()], fr = this._figRect(), P = this._zp;
+    const m = [(a[0] + b[0]) / 2 - fr.left, (a[1] + b[1]) / 2 - fr.top];
+    const s = clamp(P.s0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / P.d0, 1, 5);
+    this.setZoom(s, m[0] - P.c[0] * s, m[1] - P.c[1] * s);
+  }
+  _zpEnd() {
+    this._zp = null;
+    for (const id of [...this.pointers.keys()]) if (!this.raw.has(id)) this.pointers.delete(id);
+    if (Math.abs(this.z.s - this.boost) > 0.25 || (this.z.s < 1.05 && this.boost > 1)) this.resize(this.z.s);   // 停下来再换分辨率，捏的时候不重画
+  }
+  setZoom(s, x, y) {
+    const W = this.box.offsetWidth, H = this.box.offsetHeight;
+    if (s <= 1.001) { s = 1; x = 0; y = 0; }
+    this.z = { s, x: clamp(x, W - W * s, 0), y: clamp(y, H - H * s, 0) };
+    this.box.style.transform = s === 1 ? '' : `translate(${this.z.x}px, ${this.z.y}px) scale(${s})`;
+    this.onZoom(this.z.s);
+  }
+  resetZoom() { this.setZoom(1, 0, 0); if (this.boost > 1) this.resize(1); }
+
   _clearWet() { const g = this.wet.getContext('2d'); g.clearRect(0, 0, this.wet.width, this.wet.height); }
   _strokeDown(e, [x, y]) {
-    const W = this.cssW, H = this.cssH, base = SIZES[this.size] * PEN[this.pen].k;
+    const W = this.cssW, H = this.cssH, base = SIZES[this.size] * PEN[this.pen].k / this.z.s;
     const s = { t: this.pen, c: this.color, w: +base.toFixed(5), p: [[+(x / W).toFixed(4), +(y / H).toFixed(4), +base.toFixed(5)]] };
     if (s.t === 'rainbow') s.h0 = Math.round(Math.random() * 360);
     this.cur = s; this.curId = e.pointerId; this.last = { x: e.clientX, y: e.clientY, t: performance.now(), w: base };

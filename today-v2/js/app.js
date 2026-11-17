@@ -43,7 +43,38 @@ for (const w of window.WORDS) { const o = document.createElement('option'); o.va
 const photo = $('photo'), fig = $('mine');
 const key = `cloudia-v2-${id}`;
 let stage = 'draw', said = '', started = false;
-const board = new Board(fig, photo, { onChange: changed });
+const board = new Board(fig, photo, { onChange: changed, onZoom: z => { $('zoomReset').hidden = z <= 1.01; } });
+let focused = false;
+$('zoomReset').onclick = () => board.resetZoom();
+
+// ---------- 画得更大：手机上横图贴边；「Bigger」整屏只剩画和工具，两指放大 ----------
+function bleed() {
+  for (const f of [fig, $('ours')]) f.classList.toggle('bleed', !focused && innerWidth < 600 && ITEM.w >= ITEM.h);
+}
+function fitFocus() {
+  const a = $('canvasArea');
+  fig.style.maxWidth = 'none';
+  fig.style.width = Math.floor(Math.min(a.clientWidth, a.clientHeight * ITEM.w / ITEM.h)) + 'px';
+}
+function focusTip() {
+  const wide = ITEM.w > ITEM.h * 1.15, upright = innerHeight > innerWidth;
+  if (!touchy) return 'Ctrl + scroll (or pinch the trackpad) to zoom in.';
+  return wide && upright ? 'Turn your phone sideways for more room · pinch to zoom' : 'Pinch with two fingers to zoom in';
+}
+function setFocus(on) {
+  focused = on;
+  $('stage').classList.toggle('focus', on); document.body.classList.toggle('focus', on);
+  board.resetZoom();
+  if (on) { $('focusTip').textContent = focusTip(); fitFocus(); }
+  else { fig.style.width = ''; fitFigure(fig, ITEM.w, ITEM.h); }
+  bleed();
+  requestAnimationFrame(() => board.resize(1));
+  if (!on) setTimeout(() => fig.scrollIntoView({ block: 'center' }), 30);
+  count(on ? 'focus' : 'focus-close');
+}
+$('bigBtn').onclick = () => setFocus(true);
+$('focusClose').onclick = () => setFocus(false);
+addEventListener('keydown', e => { if (e.key === 'Escape' && focused) setFocus(false); });
 
 function fitFigure(f, w, h) {   // 竖的老画别撑出屏幕：限制画框宽，让整张图落在一屏里
   const maxH = Math.max(300, innerHeight * 0.6);
@@ -57,6 +88,7 @@ function changed() {
   $('clear').disabled = empty || stage !== 'draw';
   $('done').disabled = empty || stage !== 'draw';
   $('hint').style.opacity = empty && stage === 'draw' ? 1 : 0;
+  $('bigBtn').hidden = stage !== 'draw';
   if (!empty && !started) { started = true; count('first-stroke'); }
   save();
 }
@@ -116,7 +148,7 @@ $('tabStk').onclick = () => tab('stickers');
 $('undo').onclick = () => board.undo();
 $('redo').onclick = () => board.redo();
 $('clear').onclick = () => board.clear();
-$('done').onclick = () => { setStage('name'); count('done'); setTimeout(() => $('word').focus({ preventScroll: true }), 60); $('naming').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('done').onclick = () => { if (focused) setFocus(false); setStage('name'); count('done'); setTimeout(() => $('word').focus({ preventScroll: true }), 60); $('naming').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('back').onclick = () => setStage('draw');
 $('skip').onclick = () => { said = ''; setStage('reveal'); };
 $('askForm').onsubmit = e => {
@@ -269,11 +301,15 @@ function boot() {
   credit(); rooms();
   (ITEM.saw || []).forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = named(s.word); b.onclick = () => showOurs(i); $('chips').appendChild(b); });
   photo.alt = ITEM.kind === 'oldsky' ? `${ITEM.credit.title}, a painting of the sky` : 'A real cloud';
-  fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h);
+  fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); bleed();
   photo.onload = () => { board.resize(); restore(); changed(); penPreviews(); };
   photo.src = ITEM.src; $('photo2').src = ITEM.src;
   $('photo2').onload = () => { if (stage === 'reveal') showOurs(showing); };
-  let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); board.resize(); if (stage === 'reveal') showOurs(showing); }, 120); });
+  let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => {
+    board.resetZoom();
+    if (focused) { $('focusTip').textContent = focusTip(); fitFocus(); } else fitFigure(fig, ITEM.w, ITEM.h);
+    fitFigure($('ours'), ITEM.w, ITEM.h); bleed(); board.resize(1); if (stage === 'reveal') showOurs(showing);
+  }, 150); });
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
 let ITEM;
