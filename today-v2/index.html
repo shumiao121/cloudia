@@ -19,7 +19,7 @@
   不上传任何东西、不放 cookie；画只在这台设备上（Safari 七天不开会清掉）。素材：tools/web/build_today.py。
   ?i=<图的编号> 打开某一张，?d=2026-11-20 换日期（测试用）。
 -->
-<link rel="stylesheet" href="css/today.css?v=2">
+<link rel="stylesheet" href="css/today.css?v=3">
 </head>
 <body>
 <main>
@@ -28,11 +28,17 @@
   <h1 id="ask">What do you see in this cloud?</h1>
   <p class="sub" id="how">Trace it with your finger.</p>
 
-  <figure id="mine" class="board">
-    <img id="photo" alt="">
-    <div class="hint" id="hint">Draw right on the picture</div>
-  </figure>
-  <p class="caption" id="caption" hidden></p>
+  <div id="stage">
+  <div class="focusbar"><span class="small" id="focusTip"></span><span class="grow"></span><button id="focusClose">Close</button></div>
+  <div class="canvasArea" id="canvasArea">
+    <figure id="mine" class="board">
+      <div class="zoomer"><img id="photo" alt=""></div>
+      <div class="hint" id="hint">Draw right on the picture</div>
+      <button class="fig-btn" id="bigBtn" aria-label="Draw full screen">⤢ Bigger</button>
+      <button class="fig-btn left" id="zoomReset" hidden aria-label="Zoom back out">1×</button>
+    </figure>
+    <p class="caption" id="caption" hidden></p>
+  </div>
 
   <div class="dock" id="dock">
     <div class="row tabs">
@@ -58,6 +64,7 @@
       <div id="sizes" class="sizes" aria-label="Line size"></div>
       <button class="primary" id="done" disabled>Done</button>
     </div>
+  </div>
   </div>
 
   <section id="naming" hidden class="fade">
@@ -130,6 +137,6 @@
 
 <script src="manifest.js?v=2"></script>
 <script src="words.js?v=2"></script>
-<script type="module" src="js/app.js?v=2"></script>
+<script type="module" src="js/app.js?v=3"></script>
 </body>
 </html>
