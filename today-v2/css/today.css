@@ -31,7 +31,43 @@ figure.board { margin: 0 auto; position: relative; border-radius: 14px; overflow
   box-shadow: 0 10px 30px rgba(20,30,50,.18); max-width: 100%; touch-action: pan-y; }
 figure.board img { display: block; width: 100%; height: auto;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: none; }
+.zoomer { position: relative; transform-origin: 0 0; }
 .layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.fig-btn { position: absolute; top: 8px; right: 8px; z-index: 5; padding: 6px 12px; font-size: 13.5px; font-weight: 600;
+  background: rgba(20,28,40,.55); color: #fff; border: 0; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.fig-btn.left { right: auto; left: 8px; }
+/* 手机上横的图贴满屏宽，不留两边白 */
+@media (max-width: 600px) {
+  figure.board.bleed { margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+    max-width: none !important; border-radius: 0; box-shadow: none; }
+}
+/* 全屏画：只剩画和工具；手机横过来时工具挪到右边，画占满高度 */
+.focusbar { display: none; }
+body.focus { overflow: hidden; }
+#stage.focus { position: fixed; inset: 0; z-index: 8; background: var(--paper); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px;
+  padding: calc(6px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+#stage.focus .focusbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#stage.focus .focusbar .small { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#stage.focus .canvasArea { min-height: 0; min-width: 0; display: grid; place-items: center; overflow: hidden; }
+#stage.focus figure.board { margin: 0; border-radius: 8px; max-width: none !important; }
+#stage.focus .caption, #stage.focus #bigBtn { display: none; }
+#stage.focus .dock { margin-top: 0; width: 100%; max-width: 760px; justify-self: center; padding: 8px 10px; gap: 8px; }
+@media (orientation: landscape) and (max-height: 560px) {
+  #stage.focus { grid-template-columns: minmax(0, 1fr) 264px; grid-template-rows: auto minmax(0, 1fr); column-gap: 10px; }
+  #stage.focus .canvasArea { grid-column: 1; grid-row: 1 / span 2; }
+  #stage.focus .focusbar { grid-column: 2; grid-row: 1; }
+  #stage.focus .focusbar .small { white-space: normal; font-size: 12px; line-height: 1.3; }
+  #stage.focus .dock { grid-column: 2; grid-row: 2; overflow-y: auto; align-self: stretch; align-content: start; }
+  #stage.focus .pens { gap: 4px; overflow: visible; }
+  #stage.focus .pen { flex: 1 1 0; min-width: 0; padding: 5px 1px; font-size: 10.5px; border-radius: 10px; }
+  #stage.focus .pen canvas { width: 32px; height: 15px; }
+  #stage.focus .dock { gap: 7px; padding: 8px; }
+  #stage.focus .colors { justify-content: flex-start; }
+  #stage.focus .colors { gap: 4px; }
+  #stage.focus .sw { width: 24px; height: 24px; }
+  #stage.focus .tray { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #stage.focus .end { flex-wrap: wrap; }
+}
 .layer.touch { pointer-events: auto; touch-action: none; cursor: crosshair; }
 .layer.touch.locked { pointer-events: none; }
 .layer.wet { opacity: 1; }
