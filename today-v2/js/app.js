@@ -1,6 +1,7 @@
-// 网页「今天这朵」第二版的页面逻辑（11-17）：挑图 → 画（笔 / 贴纸）→ 起名 → 揭晓「我们看见的」→ 两张图分享 → 屋子里换一张。
-import { Board, PENS, COLORS, SIZES, drawStroke } from './board.js';
-import { STICKERS, icon } from './stickers.js';
+// 网页「今天这朵」的页面逻辑（11-17 第二版，11-18 第三版「工作台」）：
+// 挑图 → 画（12 支笔 / 形状 / 填色 / 对称 / 贴纸 / 文字）→ 起名 → 揭晓「我们看见的」→ 两张图分享 → 屋子里换一张。
+import { Board, PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStroke } from './board.js';
+import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -33,7 +34,7 @@ const touchy = matchMedia('(pointer: coarse)').matches;
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const android = /Android/.test(navigator.userAgent);
 if (meta.kind === 'oldsky') { $('ask').textContent = 'What do you see in this sky?'; document.title = 'What do you see in this sky? · Cloudia'; }
-$('how').textContent = touchy ? 'Trace it with your finger — then give it some eyes.' : 'Trace it with your mouse — or open this on your phone.';
+$('how').textContent = touchy ? 'Trace it with your finger — then give it some eyes.' : 'Trace it with your mouse or trackpad. Hold space to move around, ⌘/Ctrl + scroll to zoom.';
 if (android) { const s = $('store'); s.removeAttribute('href'); s.textContent = 'Cloudia is on iPhone & iPad'; s.style.opacity = .6; }
 if (ios) $('notIOS').hidden = true;
 $('store').addEventListener('click', () => count('store'));
@@ -42,24 +43,36 @@ for (const w of window.WORDS) { const o = document.createElement('option'); o.va
 // ---------- 画板 ----------
 const photo = $('photo'), fig = $('mine');
 const key = `cloudia-v2-${id}`;
-let stage = 'draw', said = '', started = false;
-const board = new Board(fig, photo, { onChange: changed, onZoom: z => { $('zoomReset').hidden = z <= 1.01; } });
-let focused = false;
+let stage = 'draw', said = '', started = false, focused = false, tabNow = 'draw', lastTool = 'pen';
+const board = new Board(fig, photo, {
+  onChange: changed,
+  onZoom: z => { $('zoomReset').hidden = z <= 1.01; },
+  onPick: c => { setColor(c); setTool(lastTool); toast('Picked a color from the picture'); },
+  onNote: what => { if (what === 'fill') toast('Close the shape first — the color would spill out.'); },
+});
 $('zoomReset').onclick = () => board.resetZoom();
+$('zoomIn').onclick = () => board.zoomBy(1.5);
+$('zoomOut').onclick = () => board.zoomBy(1 / 1.5);
 
-// ---------- 画得更大：手机上横图贴边；「Bigger」整屏只剩画和工具，两指放大 ----------
-function bleed() {
-  for (const f of [fig, $('ours')]) f.classList.toggle('bleed', !focused && innerWidth < 600 && ITEM.w >= ITEM.h);
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2200); }
+
+// ---------- 画框多大：电脑上按窗口高度铺满；手机上横图贴边；「Bigger」整屏 ----------
+const wide = () => innerWidth >= 980;
+function fitFigure(f, w, h) {
+  const maxH = wide() ? Math.max(360, innerHeight - 150) : Math.max(300, innerHeight * 0.6);
+  f.style.maxWidth = Math.round(maxH * w / h) + 'px';   // 只按高度限；宽度交给 CSS 的 100%
 }
+function bleed() { for (const f of [fig, $('ours')]) f.classList.toggle('bleed', !focused && innerWidth < 600 && ITEM.w >= ITEM.h); }
 function fitFocus() {
   const a = $('canvasArea');
   fig.style.maxWidth = 'none';
   fig.style.width = Math.floor(Math.min(a.clientWidth, a.clientHeight * ITEM.w / ITEM.h)) + 'px';
 }
 function focusTip() {
-  const wide = ITEM.w > ITEM.h * 1.15, upright = innerHeight > innerWidth;
-  if (!touchy) return 'Ctrl + scroll (or pinch the trackpad) to zoom in.';
-  return wide && upright ? 'Turn your phone sideways for more room · pinch to zoom' : 'Pinch with two fingers to zoom in';
+  const wideImg = ITEM.w > ITEM.h * 1.15, upright = innerHeight > innerWidth;
+  if (!touchy) return 'Hold space and drag to move · ⌘/Ctrl + scroll to zoom · Esc to close';
+  return wideImg && upright ? 'Turn your phone sideways for more room · pinch to zoom' : 'Pinch with two fingers to zoom in';
 }
 function setFocus(on) {
   focused = on;
@@ -68,18 +81,12 @@ function setFocus(on) {
   if (on) { $('focusTip').textContent = focusTip(); fitFocus(); }
   else { fig.style.width = ''; fitFigure(fig, ITEM.w, ITEM.h); }
   bleed();
-  requestAnimationFrame(() => board.resize(1));
+  requestAnimationFrame(() => { board.resize(1); previews(); });
   if (!on) setTimeout(() => fig.scrollIntoView({ block: 'center' }), 30);
   count(on ? 'focus' : 'focus-close');
 }
 $('bigBtn').onclick = () => setFocus(true);
 $('focusClose').onclick = () => setFocus(false);
-addEventListener('keydown', e => { if (e.key === 'Escape' && focused) setFocus(false); });
-
-function fitFigure(f, w, h) {   // 竖的老画别撑出屏幕：限制画框宽，让整张图落在一屏里
-  const maxH = Math.max(300, innerHeight * 0.6);
-  f.style.maxWidth = Math.round(maxH * w / h) + 'px';   // 只按高度限；宽度交给 CSS 的 100%（藏着的时候量不到父元素宽）
-}
 
 function changed() {
   const empty = board.isEmpty();
@@ -89,62 +96,136 @@ function changed() {
   $('done').disabled = empty || stage !== 'draw';
   $('hint').style.opacity = empty && stage === 'draw' ? 1 : 0;
   $('bigBtn').hidden = stage !== 'draw';
+  const objTab = tabNow === 'stickers' || tabNow === 'text';
+  $('objTools').hidden = !objTab || board.selected < 0;
+  $('objTip').hidden = !objTab || board.selected >= 0 || !board.stickers.length;
   if (!empty && !started) { started = true; count('first-stroke'); }
   save();
 }
 
-// 笔
-const PEN_NAMES = { ink: 'Ink', marker: 'Marker', crayon: 'Crayon', rainbow: 'Rainbow', eraser: 'Eraser' };
-for (const p of PENS) {
-  const b = document.createElement('button'); b.className = 'pen'; b.dataset.pen = p; b.setAttribute('aria-pressed', p === board.pen);
-  const c = document.createElement('canvas'); const dpr = Math.min(devicePixelRatio || 1, 2); c.width = 40 * dpr; c.height = 18 * dpr;
-  b.append(c, document.createTextNode(PEN_NAMES[p]));
-  b.onclick = () => { board.pen = p; pressed('#pens .pen', b); };
-  $('pens').appendChild(b);
+// ---------- 工具：笔 / 填色 / 形状（按钮上画一小段样子） ----------
+const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function previewColor() { return board.color === '#FFFFFF' ? '#9AA3AD' : board.color === COLORS[0] ? cssVar('--ink') : board.color; }
+function wave() { const pts = []; for (let i = 0; i <= 18; i++) { const t = i / 18; pts.push([0.1 + t * 0.8, 0.5 + Math.sin(t * Math.PI * 2) * 0.24, 0]); } return pts; }
+const PREVIEW_W = { ink: 0.05, pencil: 0.03, brush: 0.08, marker: 0.11, highlighter: 0.14, crayon: 0.08, calligraphy: 0.11, airbrush: 0.22, neon: 0.05, rainbow: 0.07, dashed: 0.045 };
+function toolButton(parent, label, data) {
+  const b = document.createElement('button'); b.className = 'pen'; Object.assign(b.dataset, data); b.title = label;
+  const c = document.createElement('canvas'); const dpr = Math.min(devicePixelRatio || 1, 2); c.width = 44 * dpr; c.height = 20 * dpr;
+  b.append(c, document.createTextNode(label)); parent.appendChild(b); return b;
 }
-function penPreviews() {
-  for (const b of document.querySelectorAll('#pens .pen')) {
-    const c = b.querySelector('canvas'), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
-    const p = b.dataset.pen, pts = [];
-    for (let i = 0; i <= 16; i++) { const t = i / 16; pts.push([0.08 + t * 0.84, 0.5 + Math.sin(t * Math.PI * 2) * 0.22]); }
-    if (p === 'eraser') { g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink-soft'); g.font = `${c.height * 0.8}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('⌫', c.width / 2, c.height / 2); continue; }
-    const inkVar = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();   // 深色模式下深色墨线的小样看不见，跟着页面文字色
-    const shown = board.color === '#FFFFFF' ? '#9AA3AD' : board.color === COLORS[0] ? inkVar : board.color;
-    const s = { t: p, c: p === 'rainbow' ? '#000' : shown, w: { ink: 0.05, marker: 0.11, crayon: 0.08, rainbow: 0.07 }[p], p: pts, h0: 0 };
-    g.save(); if (p === 'marker') g.globalAlpha = 0.55; drawStroke(g, s, c.width, c.height); g.restore();
+for (const p of PENS) toolButton($('pens'), PEN_NAMES[p], { pen: p }).onclick = () => { board.pen = p; setTool('pen'); };
+toolButton($('pens'), 'Fill', { tool: 'fill' }).onclick = () => setTool('fill');
+for (const k of SHAPES) toolButton($('shapes'), { line: 'Line', arrow: 'Arrow', rect: 'Box', ellipse: 'Circle' }[k], { shape: k }).onclick = () => { board.shape = k; setTool('shape'); };
+$('shapeFill').onchange = e => { board.shapeFilled = e.target.checked; previews(); };
+
+function previews() {
+  const col = previewColor();
+  for (const b of document.querySelectorAll('#pens .pen, #shapes .pen')) {
+    const c = b.querySelector('canvas'), g = c.getContext('2d'), W = c.width, H = c.height; g.clearRect(0, 0, W, H);
+    if (b.dataset.pen === 'eraser' || b.dataset.tool === 'fill') {
+      g.fillStyle = b.dataset.tool === 'fill' ? col : cssVar('--ink-soft'); g.font = `${H * 0.82}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(b.dataset.tool === 'fill' ? '◉' : '⌫', W / 2, H / 2); continue;
+    }
+    if (b.dataset.shape) { drawStroke(g, { t: 'shape', kind: b.dataset.shape, c: col, w: 0.05, p: [[0.22, 0.22], [0.78, 0.8]], filled: board.shapeFilled }, W, H); continue; }
+    const p = b.dataset.pen;
+    g.save(); g.globalAlpha = { marker: 0.55, highlighter: 0.45 }[p] || 1;
+    drawStroke(g, { t: p, c: p === 'rainbow' ? '#000' : col, w: PREVIEW_W[p] || 0.06, p: wave(), h0: 0, seed: 3 }, W, H); g.restore();
   }
+  const d = $('sizeDot'), px = Math.max(2, Math.min(30, sizeToWidth(board.sizeN) * (fig.offsetWidth || 340)));
+  d.style.width = d.style.height = px + 'px'; d.style.background = col; d.style.opacity = board.opacity;
 }
-// 颜色
+
+function setTool(t) {
+  if (t !== 'pick') lastTool = t;
+  board.setTool(t);
+  for (const b of document.querySelectorAll('#pens .pen')) b.setAttribute('aria-pressed', t === 'pen' ? b.dataset.pen === board.pen : (t === 'fill' && b.dataset.tool === 'fill'));
+  for (const b of document.querySelectorAll('#shapes .pen')) b.setAttribute('aria-pressed', t === 'shape' && b.dataset.shape === board.shape);
+  $('pickBtn').setAttribute('aria-pressed', t === 'pick');
+  if (t === 'pick') toast('Tap the picture to pick its color');
+}
+
+// ---------- 颜色、粗细、透明度、对称、照片淡化 ----------
+function setColor(c) {
+  board.color = c;
+  for (const b of document.querySelectorAll('#colors .sw')) b.setAttribute('aria-pressed', b.dataset.c === c);
+  const custom = !COLORS.includes(c), lab = $('customColor').parentElement;
+  lab.setAttribute('aria-pressed', custom);
+  if (custom) { $('customColor').value = c.toLowerCase(); lab.style.background = c; }
+  if (board.pen === 'eraser' || board.pen === 'rainbow') { board.pen = 'ink'; if (board.tool === 'pen') setTool('pen'); }
+  const s = board.stickers[board.selected];   // 正选着的文字跟着换色
+  if (s && s.k === 'text' && s.c !== c) { const before = board._stk(); s.c = c; board._push({ kind: 'stickers', before, after: board._stk() }); board.renderStickers(); }
+  previews();
+}
 for (const col of COLORS) {
-  const b = document.createElement('button'); b.className = 'sw'; b.style.background = col; b.setAttribute('aria-label', 'Color'); b.setAttribute('aria-pressed', col === board.color);
-  b.onclick = () => { board.color = col; if (board.pen === 'eraser' || board.pen === 'rainbow') { board.pen = 'ink'; pressed('#pens .pen', document.querySelector('[data-pen="ink"]')); } pressed('#colors .sw', b); penPreviews(); };
-  $('colors').appendChild(b);
+  const b = document.createElement('button'); b.className = 'sw'; b.style.background = col; b.dataset.c = col; b.setAttribute('aria-label', 'Color ' + col);
+  b.onclick = () => setColor(col); $('colors').appendChild(b);
 }
-// 粗细
-SIZES.forEach((_, i) => {
-  const b = document.createElement('button'); b.className = 'sz'; b.setAttribute('aria-label', ['Thin', 'Medium', 'Thick'][i]); b.setAttribute('aria-pressed', i === board.size);
-  const dot = document.createElement('i'); dot.style.width = dot.style.height = [6, 11, 18][i] + 'px'; b.appendChild(dot);
-  b.onclick = () => { board.size = i; pressed('#sizes .sz', b); };
-  $('sizes').appendChild(b);
-});
-function pressed(sel, on) { for (const b of document.querySelectorAll(sel)) b.setAttribute('aria-pressed', b === on); }
-// 贴纸
-{
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  for (const st of STICKERS) {
+$('customColor').oninput = e => setColor(e.target.value.toUpperCase());
+$('pickBtn').onclick = () => setTool(board.tool === 'pick' ? lastTool : 'pick');
+$('size').oninput = e => { board.sizeN = +e.target.value; previews(); };
+$('opacity').oninput = e => { board.opacity = +e.target.value / 100; $('opNum').textContent = e.target.value + '%'; previews(); };
+$('fade').oninput = e => { board.setPhotoFade(+e.target.value / 100); $('fadeNum').textContent = e.target.value + '%'; };
+for (const [k, label, title] of [['off', 'Off', 'No mirror'], ['m2', '⇆', 'Mirror left and right'], ['m4', '✣', 'Mirror four ways'], ['r6', '❋', 'Six-petal kaleidoscope']]) {
+  const b = document.createElement('button'); b.setAttribute('role', 'tab'); b.dataset.sym = k; b.textContent = label; b.title = title; b.setAttribute('aria-label', title);
+  b.setAttribute('aria-selected', k === 'off');
+  b.onclick = () => { board.sym = k; for (const x of $('syms').children) x.setAttribute('aria-selected', x === b); if (k !== 'off') toast(title); };
+  $('syms').appendChild(b);
+}
+
+// ---------- 贴纸 ----------
+let packNow = 'faces';
+function tray() {
+  const dpr = Math.min(devicePixelRatio || 1, 2); $('tray').innerHTML = '';
+  for (const st of STICKERS.filter(s => s.pack === packNow)) {
     const b = document.createElement('button'); b.setAttribute('aria-label', st.name); b.title = st.name;
-    const c = icon(st, 44, dpr); b.appendChild(c);
-    b.onclick = () => { board.addSticker(st.id); count('sticker'); };
+    b.appendChild(icon(st, 44, dpr));
+    b.onclick = () => { board.addSticker(st.id); count('sticker'); changed(); };
     $('tray').appendChild(b);
   }
+  for (const b of $('packs').children) b.setAttribute('aria-pressed', b.dataset.pack === packNow);
 }
+for (const p of PACKS) { const b = document.createElement('button'); b.className = 'chip'; b.dataset.pack = p.id; b.textContent = p.name; b.onclick = () => { packNow = p.id; tray(); }; $('packs').appendChild(b); }
+$('objFront').onclick = () => board.arrangeSelected('front');
+$('objBack').onclick = () => board.arrangeSelected('back');
+$('objCopy').onclick = () => board.arrangeSelected('copy');
+$('objFlip').onclick = () => board.arrangeSelected('flip');
+$('objDel').onclick = () => { board.removeSelected(); changed(); };
+
+// ---------- 文字 ----------
+let fontNow = 'serif';
+for (const [k, f] of Object.entries(FONTS)) {
+  const b = document.createElement('button'); b.setAttribute('role', 'tab'); b.textContent = f.name; b.style.font = f.css.replace('100px', '15px');
+  b.setAttribute('aria-selected', k === fontNow);
+  b.onclick = () => {
+    fontNow = k; for (const x of $('fonts').children) x.setAttribute('aria-selected', x === b);
+    const s = board.stickers[board.selected];   // 正选着的文字换字体，高度不变
+    if (s && s.k === 'text' && s.f !== k) {
+      const before = board._stk(), h = s.w / s.ratio; s.f = k; s.ratio = textRatio(s); s.w = h * s.ratio;
+      board._push({ kind: 'stickers', before, after: board._stk() }); board.renderStickers();
+    }
+  };
+  $('fonts').appendChild(b);
+}
+$('textForm').onsubmit = async e => {
+  e.preventDefault();
+  const t = $('textIn').value.trim(); if (!t) { $('textIn').focus(); return; }
+  try { await document.fonts.load(FONTS[fontNow].css.replace('100px', '40px'), t); } catch (_) {}
+  board.addText(t, fontNow, board.color);
+  $('textIn').value = ''; $('textIn').blur(); count('text'); changed();
+};
+
+// ---------- 页签 ----------
 function tab(which) {
-  $('tabDraw').setAttribute('aria-selected', which === 'draw'); $('tabStk').setAttribute('aria-selected', which === 'stickers');
-  $('drawTools').hidden = which !== 'draw'; $('stkTools').hidden = which !== 'stickers'; $('sizes').hidden = which !== 'draw';
-  board.setMode(stage === 'draw' ? which : 'locked');
+  tabNow = which;
+  for (const b of $('tabs').children) b.setAttribute('aria-selected', b.dataset.tab === which);
+  for (const t of ['draw', 'shapes', 'stickers', 'text']) $('pane-' + t).hidden = t !== which;
+  for (const r of document.querySelectorAll('#shared [data-for]')) r.hidden = !r.dataset.for.split(' ').includes(which);
+  $('shared').querySelector('.colorrow').hidden = which === 'stickers';
+  if (which === 'shapes') setTool('shape'); else if (which === 'draw' && board.tool === 'shape') setTool('pen');
+  board.setMode(stage !== 'draw' ? 'locked' : (which === 'stickers' || which === 'text') ? 'stickers' : 'draw');
+  changed();
 }
-$('tabDraw').onclick = () => tab('draw');
-$('tabStk').onclick = () => tab('stickers');
+for (const b of $('tabs').children) b.onclick = () => tab(b.dataset.tab);
 $('undo').onclick = () => board.undo();
 $('redo').onclick = () => board.redo();
 $('clear').onclick = () => board.clear();
@@ -158,12 +239,37 @@ $('askForm').onsubmit = e => {
   $('word').blur(); setStage('reveal');
 };
 
+// ---------- 键盘（电脑上） ----------
+const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !/^(range|checkbox|color)$/.test(a.type); };
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (board.tool === 'pick') setTool(lastTool); else if (focused) setFocus(false); return; }
+  if (stage !== 'draw' || typing()) return;
+  const cmd = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  if (cmd && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
+  if (cmd && k === 'y') { e.preventDefault(); board.redo(); return; }
+  if (cmd || e.altKey) return;
+  if (e.key === ' ') { e.preventDefault(); if (!board.spaceDown) { board.spaceDown = true; board._cursor(); } return; }
+  const penKeys = { b: 'ink', p: 'pencil', m: 'marker', h: 'highlighter', e: 'eraser', n: 'neon', a: 'airbrush', c: 'crayon' };
+  if (penKeys[k]) { tab('draw'); board.pen = penKeys[k]; setTool('pen'); }
+  else if (k === 'g') { tab('draw'); setTool('fill'); }
+  else if (k === 'i') setTool('pick');
+  else if (k === 'u') tab('shapes');
+  else if (k === 's') tab('stickers');
+  else if (k === 't') { tab('text'); setTimeout(() => $('textIn').focus(), 0); e.preventDefault(); }
+  else if (k === '[' || k === ']') { board.sizeN = Math.max(1, Math.min(100, board.sizeN + (k === ']' ? 6 : -6))); $('size').value = board.sizeN; previews(); }
+  else if (k === '=' || k === '+') board.zoomBy(1.5);
+  else if (k === '-') board.zoomBy(1 / 1.5);
+  else if (k === '0') board.resetZoom();
+  else if ((k === 'backspace' || k === 'delete') && board.selected >= 0) { e.preventDefault(); board.removeSelected(); changed(); }
+});
+addEventListener('keyup', e => { if (e.key === ' ') { board.spaceDown = false; board._cursor(); } });
+
 function setStage(s) {
   stage = s;
   $('dock').hidden = s !== 'draw';
   $('naming').hidden = s !== 'name';
   $('reveal').hidden = s !== 'reveal';
-  board.setMode(s === 'draw' ? ($('tabStk').getAttribute('aria-selected') === 'true' ? 'stickers' : 'draw') : 'locked');
+  tab(tabNow);
   if (s === 'reveal') {
     showYou(); showOurs(Math.max(0, (ITEM.saw || []).findIndex(x => x.word.toLowerCase() === said.toLowerCase())));
     makePair();
@@ -269,21 +375,21 @@ function rooms() {
 }
 
 // ---------- 存取（只在这台设备上） ----------
+let restored = false;   // 读回存着的画以前一律不存：起步时切页签会触发 changed()，那时板子还是空的，存了就把旧画盖掉了
 function save() {
-  if (!store || !window.ITEM) return;
+  if (!store || !window.ITEM || !restored) return;
   try {
     const s = JSON.stringify({ board: board.toJSON(), stage: stage === 'name' ? 'draw' : stage, said });
     if (s.length < 1.5e6) store.setItem(key, s);
   } catch (_) {}
 }
 function restore() {
-  if (!store) return;
   try {
-    const s = JSON.parse(store.getItem(key) || 'null');
-    if (!s) return;
-    board.load(s.board); said = s.said || ''; started = !board.isEmpty();
-    if (s.stage === 'reveal') setStage('reveal');
-  } catch (_) {}
+    const s = store && JSON.parse(store.getItem(key) || 'null');
+    if (s) { board.load(s.board); said = s.said || ''; started = !board.isEmpty(); }
+    restored = true;
+    if (s && s.stage === 'reveal') setStage('reveal');
+  } catch (_) { restored = true; }
 }
 
 // ---------- 起步 ----------
@@ -298,17 +404,17 @@ function credit() {
   }
 }
 function boot() {
-  credit(); rooms();
+  credit(); rooms(); tray(); tab('draw'); setTool('pen'); setColor(COLORS[0]);
   (ITEM.saw || []).forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = named(s.word); b.onclick = () => showOurs(i); $('chips').appendChild(b); });
   photo.alt = ITEM.kind === 'oldsky' ? `${ITEM.credit.title}, a painting of the sky` : 'A real cloud';
   fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); bleed();
-  photo.onload = () => { board.resize(); restore(); changed(); penPreviews(); };
+  photo.onload = () => { board.resize(); restore(); changed(); previews(); };
   photo.src = ITEM.src; $('photo2').src = ITEM.src;
   $('photo2').onload = () => { if (stage === 'reveal') showOurs(showing); };
   let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => {
     board.resetZoom();
     if (focused) { $('focusTip').textContent = focusTip(); fitFocus(); } else fitFigure(fig, ITEM.w, ITEM.h);
-    fitFigure($('ours'), ITEM.w, ITEM.h); bleed(); board.resize(1); if (stage === 'reveal') showOurs(showing);
+    fitFigure($('ours'), ITEM.w, ITEM.h); bleed(); board.resize(1); previews(); if (stage === 'reveal') showOurs(showing);
   }, 150); });
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
