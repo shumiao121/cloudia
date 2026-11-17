@@ -19,7 +19,7 @@
   不上传任何东西、不放 cookie；画只在这台设备上（Safari 七天不开会清掉）。素材：tools/web/build_today.py。
   ?i=<图的编号> 打开某一张，?d=2026-11-20 换日期（测试用）。
 -->
-<link rel="stylesheet" href="css/today.css?v=4">
+<link rel="stylesheet" href="css/today.css?v=5">
 </head>
 <body>
 <main>
@@ -88,6 +88,17 @@
       <div class="row slide" data-for="draw shapes"><span class="lab">Opacity</span><input type="range" id="opacity" min="10" max="100" value="100" aria-label="Opacity"><span class="num" id="opNum">100%</span></div>
       <div class="row slide" data-for="draw shapes"><span class="lab">Mirror</span><div class="seg mini" id="syms" role="tablist" aria-label="Mirror drawing"></div></div>
       <div class="row slide"><span class="lab">Photo</span><input type="range" id="fade" min="15" max="100" value="100" aria-label="Fade the photo while you trace"><span class="num" id="fadeNum">100%</span></div>
+    </div>
+
+    <div class="apponly" id="appOnly">
+      <p class="lab2">Only in the Cloudia app</p>
+      <div class="appgrid">
+        <button data-app="light"><img src="img/app-light.jpg" alt="" loading="lazy"><span>Light it up</span></button>
+        <button data-app="judge"><img src="img/app-judge.jpg" alt="" loading="lazy"><span>It says what it sees</span></button>
+        <button data-app="gallery"><img src="img/app-gallery.jpg" alt="" loading="lazy"><span>Your own gallery</span></button>
+        <button data-app="sky"><img src="img/app-sky.jpg" alt="" loading="lazy"><span>Any sky — even yours</span></button>
+      </div>
+      <p class="small">Also in the app: 21 brushes, Apple Pencil pressure, layers and holiday cards.</p>
     </div>
 
     <div class="row end">
@@ -165,6 +176,18 @@
 </main>
 
 <div id="toast" role="status" hidden></div>
+<div id="appSheet" hidden role="dialog" aria-modal="true" aria-labelledby="appTitle">
+  <div class="appcard">
+    <img id="appImg" alt="">
+    <h2 id="appTitle"></h2>
+    <p id="appLine"></p>
+    <p class="small">A real screenshot from Cloudia on iPhone.</p>
+    <div class="bar">
+      <a class="btn store" id="appStore" href="https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&amp;ct=web-tools&amp;mt=8">Get Cloudia — free on iPhone &amp; iPad</a>
+      <button id="appClose">Keep drawing</button>
+    </div>
+  </div>
+</div>
 <div id="sheet" hidden>
   <div class="sheetPics" id="sheetPics"></div>
   <p>Press and hold each picture to save it.</p>
@@ -173,6 +196,6 @@
 
 <script src="manifest.js?v=2"></script>
 <script src="words.js?v=2"></script>
-<script type="module" src="js/app.js?v=4"></script>
+<script type="module" src="js/app.js?v=5"></script>
 </body>
 </html>
