@@ -58,9 +58,10 @@ body.focus { overflow: hidden; }
   #stage.focus .focusbar { grid-column: 2; grid-row: 1; }
   #stage.focus .focusbar .small { white-space: normal; font-size: 12px; line-height: 1.3; }
   #stage.focus .dock { grid-column: 2; grid-row: 2; overflow-y: auto; align-self: stretch; align-content: start; }
-  #stage.focus .pens { gap: 4px; overflow: visible; }
-  #stage.focus .pen { flex: 1 1 0; min-width: 0; padding: 5px 1px; font-size: 10.5px; border-radius: 10px; }
+  #stage.focus .pens { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  #stage.focus .pen { padding: 4px 1px; font-size: 10.5px; border-radius: 10px; }
   #stage.focus .pen canvas { width: 32px; height: 15px; }
+  #stage.focus .shared { gap: 5px; padding-top: 6px; }
   #stage.focus .dock { gap: 7px; padding: 8px; }
   #stage.focus .colors { justify-content: flex-start; }
   #stage.focus .colors { gap: 4px; }
@@ -91,9 +92,9 @@ button:disabled { opacity: .35; cursor: default; }
 .seg { display: inline-flex; background: var(--paper-dim); border-radius: 999px; padding: 3px; gap: 2px; }
 .seg button { border: 0; padding: 7px 14px; font-size: 14.5px; }
 .seg button[aria-selected="true"] { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
-.pens { overflow-x: auto; scrollbar-width: none; }
-.pen { flex: 1 1 0; flex-direction: column; gap: 2px; padding: 6px 4px; border-radius: 12px; font-size: 12.5px; min-width: 52px; }
-.pen canvas { width: 40px; height: 18px; }
+.pens { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.pen { flex-direction: column; gap: 2px; padding: 6px 2px; border-radius: 12px; font-size: 12px; min-width: 0; line-height: 1.15; }
+.pen canvas { width: 44px; height: 20px; }
 .pen[aria-pressed="true"] { background: var(--paper-dim); border-color: var(--ink); }
 .colors { display: flex; gap: 6px; flex-wrap: wrap; justify-content: space-between; width: 100%; max-width: 330px; }
 .sw { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--hair); }
@@ -107,6 +108,31 @@ button:disabled { opacity: .35; cursor: default; }
 .tray button { padding: 4px; border-radius: 12px; aspect-ratio: 1; background: #F7F4EC; border-color: #D6D0C2; }  /* 贴纸是黑描边，深色模式下也垫浅底 */
 .tray canvas { width: 100%; height: 100%; }
 .tip { margin: 0; }
+.pane { display: grid; gap: 8px; }
+.tabs .seg { width: 100%; }
+.tabs .seg button { padding: 7px 6px; flex: 1; }
+@media (max-width: 420px) { .tabs .seg button { padding: 6px 8px; font-size: 13.5px; } }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink-soft); }
+.packs { margin: 0; }
+.objtools { flex-wrap: wrap; gap: 6px; }
+.objtools button { padding: 6px 12px; font-size: 13.5px; }
+.shared { display: grid; gap: 8px; border-top: 1px solid var(--hair); padding-top: 10px; }
+.colorrow { flex-wrap: wrap; gap: 6px; }
+.colorrow .colors { width: auto; max-width: none; justify-content: flex-start; gap: 6px; }
+.sw.custom { position: relative; overflow: hidden; display: inline-block; flex: none;
+  background: conic-gradient(#E5484D, #F5C542, #3FA45B, #3BB8E0, #3B6FE0, #E66FA8, #E5484D); }
+.sw.custom input { position: absolute; inset: -4px; opacity: 0; width: calc(100% + 8px); height: calc(100% + 8px); cursor: pointer; border: 0; padding: 0; }
+.sw.custom[aria-pressed="true"] { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+.tool { width: 34px; height: 34px; }
+.tool[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.slide { gap: 10px; }
+.slide .lab { width: 58px; font-size: 13px; color: var(--ink-soft); flex: none; }
+.slide input[type=range] { flex: 1; min-width: 0; accent-color: var(--ink); }
+.slide .num { width: 40px; text-align: right; font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
+.slide .dot { display: block; border-radius: 50%; flex: none; margin: 0 5px; }
+.seg.mini button { padding: 5px 11px; font-size: 14px; }
+#toast { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30;
+  background: rgba(20,28,40,.9); color: #fff; padding: 8px 14px; border-radius: 999px; font-size: 14px; max-width: calc(100vw - 32px); text-align: center; pointer-events: none; }
 .end { padding-top: 2px; }
 
 section { margin-top: 30px; }
@@ -146,3 +172,18 @@ footer a { color: inherit; }
 #sheet button { color: #fff; border-color: #56606B; }
 .fade { animation: fade .5s ease both; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------- 电脑上的工作台：左边大画布按窗口高度铺满，右边工具栏贴着不动 ---------- */
+@media (min-width: 980px) {
+  main { max-width: 1440px; padding-left: 24px; padding-right: 24px; }
+  main > :not(#stage) { max-width: 880px; }
+  #stage:not(.focus) { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; margin-top: 6px; }
+  #stage:not(.focus) .canvasArea { min-width: 0; }
+  #stage:not(.focus) .dock { margin-top: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+  #stage.focus { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto minmax(0, 1fr); column-gap: 18px; padding: 14px 18px; }
+  #stage.focus .canvasArea { grid-column: 1; grid-row: 1 / span 2; }
+  #stage.focus .focusbar { grid-column: 2; grid-row: 1; }
+  #stage.focus .dock { grid-column: 2; grid-row: 2; overflow-y: auto; align-self: stretch; align-content: start; max-width: none; }
+  .tray { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pens { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
