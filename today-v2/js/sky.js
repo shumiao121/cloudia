@@ -7,7 +7,7 @@ import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
 
 const FW = 720, FH = 1280, FOVY = 64 * Math.PI / 180, EYE = 1.6;
-const PANO = 'sky/pink.jpg', PANO_TURN = 0.145;   // 正前方对着全景图里那朵最高的粉云
+const PANO = 'sky/pink.jpg', PANO_SMALL = 'sky/pink-1k.jpg', PANO_TURN = 0.145;   // 先用小图进去，大图下好再换   // 正前方对着全景图里那朵最高的粉云
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ease = t => (t = clamp(t, 0, 1), t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -67,7 +67,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   g.fillStyle = '#5D6771'; g.font = '28px -apple-system, system-ui, sans-serif'; g.textAlign = 'center'; g.fillText('Opening the sky…', FW / 2, FH / 2);
   let pano, readings;
   try {
-    pano = new Image(); pano.src = PANO;
+    pano = new Image(); pano.src = PANO_SMALL;
     [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {})]);
   } catch (_) { el.hidden = true; document.documentElement.style.overflow = prevOverflow; return null; }
 
@@ -122,7 +122,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, wrap], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     return t;
   };
-  const panoTex = texOf(pano, true);   // 4096×2048 是 2 的幂，可以左右接缝处平滑相接
+  const panoTex = texOf(pano, true);   // 1024×512、4096×2048 都是 2 的幂，左右接缝处能平滑相接
+  const big = new Image(); big.src = PANO;
+  big.decode().then(() => { if (closed) return; gl.bindTexture(gl.TEXTURE_2D, panoTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, big); }).catch(() => {});
   drawOn(at != null ? at : 0);
   for (const c of cards) c.tex = texOf(c.canvas, false);
   const cardBuf = gl.createBuffer(), verts = new Float32Array(30);
