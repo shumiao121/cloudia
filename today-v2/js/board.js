@@ -267,8 +267,9 @@ export class Board {
   }
 
   // ---------- 贴纸和文字 ----------
-  _ratio(s) { return s.k === 'text' ? (s.ratio || 3) : (STICKER[s.k]?.ratio || 1); }
+  _ratio(s) { return (s.k === 'text' || s.k === 'img') ? (s.ratio || 1) : (STICKER[s.k]?.ratio || 1); }
   _paintObj(g, s, x, y, w) {
+    if (s.k === 'img') return paintImg(g, s, x, y, w, () => this.renderStickers());
     if (s.k === 'text') paintText(g, s, x, y, w);
     else { const st = STICKER[s.k]; if (st) paintSticker(g, st, x, y, w, s.r, s.flip); }
   }
@@ -295,6 +296,8 @@ export class Board {
     const n = this.stickers.length, st = STICKER[k];
     this._addObj({ k, x: 0.5 + (n % 3 - 1) * 0.06, y: 0.45 + (n % 2) * 0.06, w: (st?.ratio || 1) >= 1.8 ? 0.22 : 0.15, r: 0 });
   }
+  /** 一张透明图（白纸上画好的东西）当贴纸放上来 */
+  addImage(src, ratio, w = 0.45) { this._addObj({ k: 'img', src, ratio, x: 0.5, y: 0.45, w, r: 0 }); }
   addText(text, font, color) {
     text = String(text).trim().slice(0, 40); if (!text) return;
     const o = { k: 'text', text, f: font, c: color, x: 0.5, y: 0.5, r: 0 };
@@ -340,7 +343,7 @@ export class Board {
   toJSON() { return { strokes: this.strokes, stickers: this.stickers }; }
   load(d) {
     this.strokes = Array.isArray(d?.strokes) ? d.strokes : [];
-    this.stickers = Array.isArray(d?.stickers) ? d.stickers.filter(s => s.k === 'text' || STICKER[s.k]) : [];
+    this.stickers = Array.isArray(d?.stickers) ? d.stickers.filter(s => s.k === 'text' || (s.k === 'img' && s.src) || STICKER[s.k]) : [];
     this.history = this.strokes.map(() => ({ kind: 'stroke' })); this.future = []; this.snaps = [];
     this.rebuild(); this.renderStickers(); this.onChange();
   }
@@ -350,8 +353,8 @@ export class Board {
   _cursor() { this.touch.style.cursor = this.spaceDown ? 'grab' : this.mode === 'stickers' ? 'default' : this.tool === 'pick' ? 'copy' : this.tool === 'fill' ? 'cell' : 'crosshair'; }
 
   // ---------- 导出：按指定像素重画（不是截屏幕） ----------
-  composeInto(g, x, y, W, H, { lines = true, stickers = true } = {}) {
-    g.drawImage(this.photo, x, y, W, H);
+  composeInto(g, x, y, W, H, { lines = true, stickers = true, photo = true } = {}) {
+    if (photo) g.drawImage(this.photo, x, y, W, H);
     if (lines && this.strokes.length) {
       const ink = document.createElement('canvas'), fill = document.createElement('canvas');
       ink.width = fill.width = Math.round(W); ink.height = fill.height = Math.round(H);
@@ -637,6 +640,17 @@ export class Board {
     if (this._pinch && this.pointers.size < 2) { this._push({ kind: 'stickers', before: this._pinch.before, after: this._stk() }); this._pinch = null; return; }
     if (this._drag && !this.pointers.size) { if (this._drag.moved) this._push({ kind: 'stickers', before: this._drag.before, after: this._stk() }); this._drag = null; }
   }
+}
+
+// 图片贴纸：同一张图只解一次码；还没解完就先跳过，解完再重画一遍贴纸层
+const imgCache = new Map();
+function paintImg(g, s, x, y, w, redraw) {
+  let im = imgCache.get(s.src);
+  if (!im) { im = new Image(); im.onload = redraw; im.src = s.src; imgCache.set(s.src, im); }
+  if (!im.complete || !im.naturalWidth) return;
+  const h = w / (s.ratio || 1);
+  g.save(); g.translate(x, y); g.rotate(s.r || 0); if (s.flip) g.scale(-1, 1);
+  g.drawImage(im, -w / 2, -h / 2, w, h); g.restore();
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }

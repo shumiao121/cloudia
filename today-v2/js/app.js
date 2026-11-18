@@ -28,13 +28,33 @@ const asked = params.get('i') || params.get('c');
 const id = asked && M.items[asked] ? asked : daily;
 const isToday = id === daily;
 const meta = M.items[id];
-$('date').textContent = isToday ? day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : (meta.kind === 'oldsky' ? 'Old skies' : 'Clouds');
+// 白纸（11-18）：纸是现画的，没有图片文件、没有「我们看见的」；画完带到一朵真云上
+const paperMode = meta.kind === 'paper';
+const PAPERS = {
+  warm: { name: 'Warm', bg: '#F6F1E6' }, white: { name: 'White', bg: '#FFFFFF' },
+  dots: { name: 'Dots', bg: '#F8F5EE', dot: '#C9C1B1' }, grid: { name: 'Grid', bg: '#FFFFFF', line: '#CFE0F2', major: '#A9C6E6' },
+  night: { name: 'Night', bg: '#151C2C', dark: true },
+};
+const ASPECTS = { wide: [1600, 1200, 'Wide'], square: [1400, 1400, 'Square'], tall: [1200, 1600, 'Tall'] };
+let paperKind = paperMode ? id.replace('paper-', '') : null, aspect = 'wide';
+function makePaper(kind, asp, scale = 1) {
+  const P = PAPERS[kind] || PAPERS.warm, [W0, H0] = ASPECTS[asp] || ASPECTS.wide, W = Math.round(W0 * scale), H = Math.round(H0 * scale);
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = P.bg; g.fillRect(0, 0, W, H);
+  const step = 40 * scale;
+  if (P.dot) { g.fillStyle = P.dot; for (let y = step; y < H; y += step) for (let x = step; x < W; x += step) { g.beginPath(); g.arc(x, y, Math.max(1, 2.2 * scale), 0, 7); g.fill(); } }
+  if (P.line) { for (let i = 1, x = step; x < W; x += step, i++) { g.fillStyle = i % 5 ? P.line : P.major; g.fillRect(Math.round(x), 0, Math.max(1, scale * 1.5), H); }
+    for (let i = 1, y = step; y < H; y += step, i++) { g.fillStyle = i % 5 ? P.line : P.major; g.fillRect(0, Math.round(y), W, Math.max(1, scale * 1.5)); } }
+  return c.toDataURL('image/png');
+}
+$('date').textContent = isToday ? day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ({ oldsky: 'Old skies', paper: 'Blank page' }[meta.kind] || 'Clouds');
 
 const touchy = matchMedia('(pointer: coarse)').matches;
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const android = /Android/.test(navigator.userAgent);
 if (meta.kind === 'oldsky') { $('ask').textContent = 'What do you see in this sky?'; document.title = 'What do you see in this sky? · Cloudia'; }
-$('how').textContent = touchy ? 'Trace it with your finger — then give it some eyes.' : 'Trace it with your mouse or trackpad. Hold space to move around, ⌘/Ctrl + scroll to zoom.';
+if (paperMode) { $('ask').textContent = 'Draw anything — then put it on a real sky.'; document.title = 'Blank page · Cloudia'; }
+$('how').textContent = paperMode ? 'Start on paper. When you’re done, your drawing can move onto a cloud.' : touchy ? 'Trace it with your finger — then give it some eyes.' : 'Trace it with your mouse or trackpad. Hold space to move around, ⌘/Ctrl + scroll to zoom.';
 if (android) { const s = $('store'); s.removeAttribute('href'); s.textContent = 'Cloudia is on iPhone & iPad'; s.style.opacity = .6; }
 if (ios) $('notIOS').hidden = true;
 $('store').addEventListener('click', () => count('store'));
@@ -42,7 +62,7 @@ for (const w of window.WORDS) { const o = document.createElement('option'); o.va
 
 // ---------- 画板 ----------
 const photo = $('photo'), fig = $('mine');
-const key = `cloudia-v2-${id}`;
+const key = paperMode ? 'cloudia-v2-paper' : `cloudia-v2-${id}`;
 let stage = 'draw', said = '', started = false, focused = false, tabNow = 'draw', lastTool = 'pen';
 const board = new Board(fig, photo, {
   onChange: changed,
@@ -99,6 +119,7 @@ function changed() {
   const objTab = tabNow === 'stickers' || tabNow === 'text';
   $('objTools').hidden = !objTab || board.selected < 0;
   $('objTip').hidden = !objTab || board.selected >= 0 || !board.stickers.length;
+  if (paperMode) for (const b of $('aspects').children) { b.disabled = !empty; b.title = empty ? '' : 'Start over to change the shape'; }
   if (!empty && !started) { started = true; count('first-stroke'); }
   save();
 }
@@ -286,9 +307,12 @@ function setStage(s) {
   stage = s;
   $('dock').hidden = s !== 'draw';
   $('naming').hidden = s !== 'name';
-  $('reveal').hidden = s !== 'reveal';
+  $('reveal').hidden = paperMode || s !== 'reveal';
+  $('paperOut').hidden = !paperMode || s !== 'reveal';
+  $('paperbar').hidden = !paperMode || s !== 'draw';
   tab(tabNow);
-  if (s === 'reveal') {
+  if (s === 'reveal' && paperMode) { paperExits(); setTimeout(() => $('paperOut').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); }
+  else if (s === 'reveal') {
     showYou(); showOurs(Math.max(0, (ITEM.saw || []).findIndex(x => x.word.toLowerCase() === said.toLowerCase())));
     makePair();
     setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
@@ -373,7 +397,7 @@ $('closeSheet').onclick = () => { $('sheet').hidden = true; };
 
 // ---------- 屋子 ----------
 function rooms() {
-  const lines = { clouds: 'Real clouds, photographed and given to the public domain.', oldskies: 'Painters’ skies, 1770s–1910s, from the Met’s open collection.' };
+  const lines = { clouds: 'Real clouds, photographed and given to the public domain.', oldskies: 'Painters’ skies, 1770s–1910s, from the Met’s open collection.', blank: 'Start on paper, then put your drawing on a real sky.' };
   let cur = M.rooms.find(r => r.items.includes(id))?.id || M.rooms[0].id;
   const draw = () => {
     $('roomTabs').innerHTML = '';
@@ -385,8 +409,10 @@ function rooms() {
     const room = M.rooms.find(r => r.id === cur); $('grid').innerHTML = '';
     for (const i of room.items) {
       const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i); if (i === id) a.setAttribute('aria-current', 'true');
-      const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.jpg`; im.alt = M.items[i].label || ''; a.appendChild(im);
-      $('grid').appendChild(a);
+      const im = new Image(); im.loading = 'lazy'; im.alt = M.items[i].label || '';
+      im.src = M.items[i].kind === 'paper' ? makePaper(i.replace('paper-', ''), 'wide', 0.18) : `thumbs/${i}.jpg`;
+      if (M.items[i].kind === 'paper') { im.alt = PAPERS[i.replace('paper-', '')].name + ' paper'; a.classList.add('paperthumb'); a.dataset.name = PAPERS[i.replace('paper-', '')].name; }
+      a.appendChild(im); $('grid').appendChild(a);
     }
   };
   draw();
@@ -395,9 +421,9 @@ function rooms() {
 // ---------- 存取（只在这台设备上） ----------
 let restored = false;   // 读回存着的画以前一律不存：起步时切页签会触发 changed()，那时板子还是空的，存了就把旧画盖掉了
 function save() {
-  if (!store || !window.ITEM || !restored) return;
+  if (!store || !ITEM || !restored) return;
   try {
-    const s = JSON.stringify({ board: board.toJSON(), stage: stage === 'name' ? 'draw' : stage, said });
+    const s = JSON.stringify({ board: board.toJSON(), stage: stage === 'name' ? 'draw' : stage, said, paper: paperKind, aspect });
     if (s.length < 1.5e6) store.setItem(key, s);
   } catch (_) {}
 }
@@ -410,8 +436,103 @@ function restore() {
   } catch (_) { restored = true; }
 }
 
+// ---------- 白纸：换纸、换画幅（下笔以前） ----------
+function paperControls() {
+  $('papers').innerHTML = '';
+  for (const [k, P] of Object.entries(PAPERS)) {
+    const b = document.createElement('button'); b.className = 'chip'; b.setAttribute('role', 'tab'); b.setAttribute('aria-pressed', k === paperKind);
+    const sw = document.createElement('i'); sw.style.background = P.bg; b.append(sw, P.name);
+    b.onclick = () => setPaper(k); $('papers').appendChild(b);
+  }
+  $('aspects').innerHTML = '';
+  for (const [k, A] of Object.entries(ASPECTS)) {
+    const b = document.createElement('button'); b.setAttribute('role', 'tab'); b.textContent = A[2]; b.setAttribute('aria-selected', k === aspect);
+    b.disabled = !board.isEmpty(); b.title = board.isEmpty() ? '' : 'Start over to change the shape';
+    b.onclick = () => setAspect(k); $('aspects').appendChild(b);
+  }
+  $('paperbar').hidden = stage !== 'draw';
+  if (PAPERS[paperKind]?.dark && board.color === COLORS[0]) setColor('#FFFFFF');
+}
+function setPaper(k) {
+  const wasDark = PAPERS[paperKind]?.dark;
+  paperKind = k; photo.src = makePaper(k, aspect);
+  history.replaceState(null, '', '?i=paper-' + k);
+  if (PAPERS[k].dark && board.color === COLORS[0]) setColor('#FFFFFF');
+  else if (!PAPERS[k].dark && wasDark && board.color === '#FFFFFF') setColor(COLORS[0]);
+  paperControls(); save(); count('paper-' + k);
+}
+function setAspect(k) {
+  if (!board.isEmpty()) return;
+  aspect = k; const [W, H] = ASPECTS[k]; ITEM.w = W; ITEM.h = H;
+  fitFigure(fig, W, H); bleed(); photo.src = makePaper(paperKind, k); paperControls(); save();
+}
+
+// ---------- 白纸画完：放到一朵真云上 / 我们也看见过它 ----------
+function allSkies() { return M.rooms.filter(r => r.id !== 'blank').flatMap(r => r.items); }
+function thumbLink(i, onClick) {
+  const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i);
+  const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.jpg`; im.alt = M.items[i].label ? `A sky where we saw ${named(M.items[i].label)}` : 'A sky'; a.appendChild(im);
+  if (onClick) a.onclick = e => { e.preventDefault(); onClick(i); };
+  return a;
+}
+function paperExits() {
+  $('youPaper').textContent = said ? `You drew ${named(said)}.` : 'Nice one.';
+  const skies = [daily, ...allSkies().filter(i => i !== daily)];
+  const fill = n => { $('skyPick').innerHTML = ''; for (const i of skies.slice(0, n)) $('skyPick').appendChild(thumbLink(i, carryOut)); $('moreSkies').hidden = n >= skies.length; };
+  fill(8); $('moreSkies').onclick = () => fill(skies.length);
+  const w = said.toLowerCase(), hits = w ? allSkies().filter(i => (M.items[i].words || []).includes(w)) : [];
+  $('sawToo').hidden = !hits.length;
+  if (hits.length) {
+    $('sawTooTitle').textContent = `We saw ${named(said)} too — in ${hits.length === 1 ? 'this sky' : 'these skies'}`;
+    $('sawTooGrid').innerHTML = ''; for (const i of hits.slice(0, 6)) $('sawTooGrid').appendChild(thumbLink(i, carryOut));
+  }
+}
+/** 白纸上的画（线和贴纸，不要纸）裁到刚好包住，出一张透明 PNG */
+function artPNG(maxLong = 1200) {
+  const W = ITEM.w, H = ITEM.h, c = document.createElement('canvas'); c.width = W; c.height = H;
+  board.composeInto(c.getContext('2d'), 0, 0, W, H, { photo: false });
+  const d = c.getContext('2d').getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (d[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;
+  const pad = 14; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1, k = Math.min(1, maxLong / Math.max(cw, ch));
+  const o = document.createElement('canvas'); o.width = Math.round(cw * k); o.height = Math.round(ch * k);
+  o.getContext('2d').drawImage(c, x0, y0, cw, ch, 0, 0, o.width, o.height);
+  return { canvas: o, ratio: cw / ch };
+}
+function carryOut(skyId) {
+  const art = artPNG(900); if (!art) { location.href = '?i=' + skyId; return; }
+  try { localStorage.setItem('cloudia-v2-carry', JSON.stringify({ src: art.canvas.toDataURL('image/png'), ratio: art.ratio, said })); } catch (_) { toast('Your browser would not hold the drawing — try Save image instead.'); return; }
+  count('paper-to-sky'); location.href = '?i=' + encodeURIComponent(skyId);
+}
+/** 到了云这页：把带来的画当贴纸摆上去，选中，让人拖到合适的地方 */
+function carryIn() {
+  let c = null; try { c = JSON.parse(localStorage.getItem('cloudia-v2-carry') || 'null'); localStorage.removeItem('cloudia-v2-carry'); } catch (_) {}
+  if (!c || !c.src) return;
+  if (stage !== 'draw') setStage('draw');
+  const w = Math.max(0.25, Math.min(0.62, c.ratio >= 1 ? 0.55 : 0.5 * c.ratio));
+  board.addImage(c.src, c.ratio, w); tab('stickers');
+  if (c.said) $('word').value = c.said;
+  toast('Your drawing is on the sky — drag it into place, then tap Done.');
+  setTimeout(() => fig.scrollIntoView({ block: 'center', behavior: 'smooth' }), 100);
+}
+$('backPaper').onclick = () => setStage('draw');
+$('savePaper').onclick = async () => {
+  const W = ITEM.w, H = ITEM.h, c = document.createElement('canvas'); c.width = W; c.height = H;
+  board.composeInto(c.getContext('2d'), 0, 0, W, H);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  urls.forEach(u => URL.revokeObjectURL(u)); urls = [URL.createObjectURL(blob)]; count('save-paper'); sheet();
+};
+$('saveLines').onclick = async () => {
+  const art = artPNG(2048); if (!art) return;
+  const blob = await new Promise(r => art.canvas.toBlob(r, 'image/png'));
+  urls.forEach(u => URL.revokeObjectURL(u)); urls = [URL.createObjectURL(blob)]; count('save-lines'); sheet();
+};
+
 // ---------- 起步 ----------
 function credit() {
+  if (paperMode) { $('credit').textContent = 'The paper is drawn by this page.'; return; }
   const c = ITEM.credit, el = $('credit'); el.textContent = '';
   const a = document.createElement('a'); a.href = c.url; a.target = '_blank'; a.rel = 'noopener';
   if (ITEM.kind === 'oldsky') {
@@ -426,7 +547,12 @@ function boot() {
   (ITEM.saw || []).forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = named(s.word); b.onclick = () => showOurs(i); $('chips').appendChild(b); });
   photo.alt = ITEM.kind === 'oldsky' ? `${ITEM.credit.title}, a painting of the sky` : 'A real cloud';
   fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); bleed();
-  photo.onload = () => { board.resize(); restore(); changed(); previews(); };
+  photo.onload = () => {
+    board.resize(); restore(); changed(); previews();
+    photo.onload = () => { board.resize(); previews(); };   // 之后换纸、换画幅只重排，不再读档
+    if (paperMode) paperControls(); else carryIn();
+  };
+  if (paperMode) { const sky = document.querySelector('.appgrid [data-app=sky]'); sky.parentElement.prepend(sky); }
   photo.src = ITEM.src; $('photo2').src = ITEM.src;
   $('photo2').onload = () => { if (stage === 'reveal') showOurs(showing); };
   let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => {
@@ -437,6 +563,14 @@ function boot() {
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
 let ITEM;
-const s = document.createElement('script'); s.src = `items/${id}.js`;
-s.onload = () => { ITEM = window.ITEM; boot(); };
-document.head.appendChild(s);
+if (paperMode) {
+  // 存着的那张纸先读出来：纸色以网址为准（从屋子里点了别的纸），画幅以存档为准
+  try { const old = store && JSON.parse(store.getItem(key) || 'null'); if (old && ASPECTS[old.aspect]) aspect = old.aspect; } catch (_) {}
+  const [W, H] = ASPECTS[aspect];
+  ITEM = { id: 'paper', kind: 'paper', src: makePaper(paperKind, aspect), w: W, h: H, saw: [] };
+  boot();
+} else {
+  const s = document.createElement('script'); s.src = `items/${id}.js`;
+  s.onload = () => { ITEM = window.ITEM; boot(); };
+  document.head.appendChild(s);
+}
