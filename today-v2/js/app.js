@@ -2,6 +2,7 @@
 // 挑图 → 画（12 支笔 / 形状 / 填色 / 对称 / 贴纸 / 文字）→ 起名 → 揭晓「我们看见的」→ 两张图分享 → 屋子里换一张。
 import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStroke } from './board.js';
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
+import { stepInside } from './inside.js';
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -301,6 +302,8 @@ function setStage(s) {
   if (s === 'reveal' && paperMode) { paperExits(); setTimeout(() => $('paperOut').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); }
   else if (s === 'reveal') {
     showYou(); showOurs(Math.max(0, (ITEM.saw || []).findIndex(x => x.word.toLowerCase() === said.toLowerCase())));
+    $('stepWrap').hidden = board.isEmpty();
+    $('stepLabel').textContent = ITEM.kind === 'oldsky' ? 'Step inside the painting' : 'Step inside your cloud';
     makePair();
     setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   }
@@ -378,6 +381,17 @@ $('share').onclick = async () => {
     try { await navigator.share({ files: pair, text: 'What do you see?' }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   sheet();   // Threads、Instagram 自带的浏览器里常常没有分享单：给图，长按存
+};
+// ---------- 走进云里：一段十几秒的小片子（js/inside.js） ----------
+$('stepIn').onclick = () => {
+  count('inside');
+  const go = stepInside({
+    photo, board, count,
+    line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
+    sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
+    storeHref: 'https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=web-inside&mt=8',
+  });
+  if (location.hostname === 'localhost') go.then(c => { window.__inside = c; });   // 本机预览时留个把手，测试能定格看某一秒
 };
 $('save').onclick = async () => { if (!pair) await makePair(); count('save'); sheet(); };
 $('closeSheet').onclick = () => { $('sheet').hidden = true; };
