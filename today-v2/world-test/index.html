@@ -63,7 +63,7 @@ el.onpointerup = up; el.onpointercancel = up;
 el.onwheel = e => { e.preventDefault(); walk(-e.deltaY * 0.004); };
 function walk(d) { if (mode === 'pano') return; const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)); pos.addScaledVector(f, d); pos.clampLength(0, 6); }
 
-let mesh = null, cur = null, t0 = 0, mode = '3d';
+let mesh = null, cur = null, t0 = 0, mode = params.get('mode') === 'pano' ? 'pano' : '3d';
 // 全景模式：同一个世界的 360° 全景图贴在大球里面（只能转头，不能走，但最清楚），用来和 3D 比清晰度
 const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 64, 32), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthWrite: false }));
 sky.scale.set(-1, 1, 1); sky.rotation.y = Math.PI; sky.visible = false; scene.add(sky);
@@ -96,7 +96,7 @@ for (const w of WORLDS) { const b = document.createElement('button'); b.dataset.
 const RES = ['100k', '500k', 'full_res'];
 const rb = document.createElement('button'); rb.textContent = 'Res: ' + res; rb.onclick = () => { const have = RES.filter(r => cur.mb && cur.mb[r]); res = have[(have.indexOf(res) + 1) % have.length]; rb.textContent = 'Res: ' + res; show(cur); }; bar.appendChild(rb);
 const fb = document.createElement('button'); fb.textContent = 'Flip'; fb.onclick = () => { flip = !flip; if (mesh) mesh.quaternion.set(flip ? 1 : 0, 0, 0, flip ? 0 : 1); }; bar.appendChild(fb);
-const mb2 = document.createElement('button'); mb2.textContent = 'Mode: 3D'; mb2.onclick = () => { mode = mode === '3d' ? 'pano' : '3d'; mb2.textContent = mode === '3d' ? 'Mode: 3D' : 'Mode: Panorama'; show(cur); }; bar.appendChild(mb2);
+const mb2 = document.createElement('button'); mb2.textContent = mode === '3d' ? 'Mode: 3D' : 'Mode: Panorama'; mb2.onclick = () => { mode = mode === '3d' ? 'pano' : '3d'; mb2.textContent = mode === '3d' ? 'Mode: 3D' : 'Mode: Panorama'; show(cur); }; bar.appendChild(mb2);
 const ib = document.createElement('button'); ib.textContent = 'Reset'; ib.onclick = () => { yaw = pitch = 0; pos.set(0, 0, 0); }; bar.appendChild(ib);
 
 // 帧率
