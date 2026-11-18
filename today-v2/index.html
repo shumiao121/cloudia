@@ -19,7 +19,7 @@
   不上传任何东西、不放 cookie；画只在这台设备上（Safari 七天不开会清掉）。素材：tools/web/build_today.py。
   ?i=<图的编号> 打开某一张，?d=2026-11-20 换日期（测试用）。
 -->
-<link rel="stylesheet" href="css/today.css?v=5">
+<link rel="stylesheet" href="css/today.css?v=6">
 </head>
 <body>
 <main>
@@ -31,6 +31,10 @@
   <div id="stage">
   <div class="focusbar"><span class="small" id="focusTip"></span><span class="grow"></span><button id="focusClose">Close</button></div>
   <div class="canvasArea" id="canvasArea">
+    <div class="paperbar" id="paperbar" hidden>
+      <div class="chips" id="papers" role="tablist" aria-label="Paper"></div>
+      <div class="seg mini" id="aspects" role="tablist" aria-label="Page shape"></div>
+    </div>
     <figure id="mine" class="board">
       <div class="zoomer"><img id="photo" alt=""></div>
       <div class="hint" id="hint">Draw right on the picture</div>
@@ -149,6 +153,26 @@
     <p class="small" style="margin-top:14px">A new cloud comes tomorrow.</p>
   </section>
 
+  <section id="paperOut" hidden class="fade">
+    <p class="you" id="youPaper"></p>
+    <div class="share" id="sawToo" hidden>
+      <h2 class="h3" id="sawTooTitle"></h2>
+      <p class="small">Tap one — your drawing comes along. Can you find it in the cloud too?</p>
+      <div class="grid pick" id="sawTooGrid"></div>
+    </div>
+    <div class="share">
+      <h2 class="h3">Now put it on a real sky</h2>
+      <p class="small">Pick a cloud. Your drawing comes along — move it, size it, then share it as a guessing game.</p>
+      <div class="grid pick" id="skyPick"></div>
+      <button class="link" id="moreSkies" hidden>More skies</button>
+    </div>
+    <div class="bar" style="margin-top:14px">
+      <button id="savePaper">Save image</button>
+      <button id="saveLines">Save lines only (PNG)</button>
+      <button class="link" id="backPaper">Keep drawing</button>
+    </div>
+  </section>
+
   <section class="rooms" id="rooms">
     <h2>More to see</h2>
     <div class="seg" role="tablist" id="roomTabs"></div>
@@ -196,6 +220,6 @@
 
 <script src="manifest.js?v=2"></script>
 <script src="words.js?v=2"></script>
-<script type="module" src="js/app.js?v=5"></script>
+<script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>
