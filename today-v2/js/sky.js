@@ -104,12 +104,12 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const r = rng(29), cards = [];
   const mineAspect = mine.width / mine.height, mineWidth = Math.min(2.3, 2.0 * mineAspect);
   cards.push({ canvas: mine, x: 0, y: EYE + 0.1, z: -4.2, w: mineWidth, h: mineWidth / mineAspect, ph: 0, mine: true });
-  readings.forEach((rd, i) => {
-    let a = ((i + 1) * 2.39996) % (Math.PI * 2); if (a > Math.PI) a -= Math.PI * 2;
-    if (Math.abs(a) < 0.55) a += Math.sign(a || 1) * 0.6;
-    const d = 5 + (i % 4) * 2.0 + r() * 1.4, c = readingCard(rd), asp = c.width / c.height;
-    const w = (1.7 + r() * 0.6) * (0.8 + d / 14), h = w / asp;   // 远的稍大一点，转过去还认得出是什么
-    cards.push({ canvas: c, x: Math.sin(a) * d, z: -Math.cos(a) * d, y: Math.max(h / 2 + 0.3, 1.0 + r() * 3.0), w, h, ph: r() * 6.28 });
+  // 18 幅均匀绕一圈（正前方左右各留 34° 给你的画），一高一低、一近一远交替，挨着的两幅不会叠在一起
+  const pick = readings.slice(0, 18), N = pick.length, DIST = [6.5, 9.5, 7.5, 11];
+  pick.forEach((rd, i) => {
+    const a = 0.6 + (i + 0.5) / N * (Math.PI * 2 - 1.2), d = DIST[i % 4] + r() * 0.8, c = readingCard(rd), asp = c.width / c.height;
+    const w = (1.9 + r() * 0.4) * (0.8 + d / 14), h = w / asp, y = i % 2 ? 3.3 + r() * 0.8 : 1.4 + r() * 0.4;
+    cards.push({ canvas: c, x: Math.sin(a) * d, z: -Math.cos(a) * d, y: Math.max(h / 2 + 0.3, y), w, h, ph: r() * 6.28 });
   });
 
   // ---------- WebGL ----------
