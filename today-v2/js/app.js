@@ -1,6 +1,6 @@
 // 网页「今天这朵」的页面逻辑（11-17 第二版，11-18 第三版「工作台」）：
 // 挑图 → 画（12 支笔 / 形状 / 填色 / 对称 / 贴纸 / 文字）→ 起名 → 揭晓「我们看见的」→ 两张图分享 → 屋子里换一张。
-import { Board, PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStroke } from './board.js';
+import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStroke } from './board.js';
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 
 const $ = id => document.getElementById(id);
@@ -128,7 +128,8 @@ function changed() {
 const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function previewColor() { return board.color === '#FFFFFF' ? '#9AA3AD' : board.color === COLORS[0] ? cssVar('--ink') : board.color; }
 function wave() { const pts = []; for (let i = 0; i <= 18; i++) { const t = i / 18; pts.push([0.1 + t * 0.8, 0.5 + Math.sin(t * Math.PI * 2) * 0.24, 0]); } return pts; }
-const PREVIEW_W = { ink: 0.05, pencil: 0.03, brush: 0.08, marker: 0.11, highlighter: 0.14, crayon: 0.08, calligraphy: 0.11, airbrush: 0.22, neon: 0.05, rainbow: 0.07, dashed: 0.045 };
+const PREVIEW_W = { ink: 0.05, pencil: 0.03, brush: 0.08, marker: 0.11, highlighter: 0.14, crayon: 0.08, calligraphy: 0.11, airbrush: 0.22, neon: 0.05, rainbow: 0.07, dashed: 0.045,
+  sparkle: 0.13, hearts: 0.12, bubbles: 0.13, confetti: 0.2, paws: 0.15, fur: 0.11, watercolor: 0.14, chalk: 0.1 };
 function toolButton(parent, label, data) {
   const b = document.createElement('button'); b.className = 'pen'; Object.assign(b.dataset, data); b.title = label;
   const c = document.createElement('canvas'); const dpr = Math.min(devicePixelRatio || 1, 2); c.width = 44 * dpr; c.height = 20 * dpr;
@@ -136,12 +137,13 @@ function toolButton(parent, label, data) {
 }
 for (const p of PENS) toolButton($('pens'), PEN_NAMES[p], { pen: p }).onclick = () => { board.pen = p; setTool('pen'); };
 toolButton($('pens'), 'Fill', { tool: 'fill' }).onclick = () => setTool('fill');
+for (const p of FUN_PENS) toolButton($('funPens'), PEN_NAMES[p], { pen: p }).onclick = () => { board.pen = p; setTool('pen'); };
 for (const k of SHAPES) toolButton($('shapes'), { line: 'Line', arrow: 'Arrow', rect: 'Box', ellipse: 'Circle' }[k], { shape: k }).onclick = () => { board.shape = k; setTool('shape'); };
 $('shapeFill').onchange = e => { board.shapeFilled = e.target.checked; previews(); };
 
 function previews() {
   const col = previewColor();
-  for (const b of document.querySelectorAll('#pens .pen, #shapes .pen')) {
+  for (const b of document.querySelectorAll('#pens .pen, #funPens .pen, #shapes .pen')) {
     const c = b.querySelector('canvas'), g = c.getContext('2d'), W = c.width, H = c.height; g.clearRect(0, 0, W, H);
     if (b.dataset.pen === 'eraser' || b.dataset.tool === 'fill') {
       g.fillStyle = b.dataset.tool === 'fill' ? col : cssVar('--ink-soft'); g.font = `${H * 0.82}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -149,7 +151,7 @@ function previews() {
     }
     if (b.dataset.shape) { drawStroke(g, { t: 'shape', kind: b.dataset.shape, c: col, w: 0.05, p: [[0.22, 0.22], [0.78, 0.8]], filled: board.shapeFilled }, W, H); continue; }
     const p = b.dataset.pen;
-    g.save(); g.globalAlpha = { marker: 0.55, highlighter: 0.45 }[p] || 1;
+    g.save(); g.globalAlpha = { marker: 0.55, highlighter: 0.45, watercolor: 0.6 }[p] || 1;
     drawStroke(g, { t: p, c: p === 'rainbow' ? '#000' : col, w: PREVIEW_W[p] || 0.06, p: wave(), h0: 0, seed: 3 }, W, H); g.restore();
   }
   const d = $('sizeDot'), px = Math.max(2, Math.min(30, sizeToWidth(board.sizeN) * (fig.offsetWidth || 340)));
@@ -159,7 +161,7 @@ function previews() {
 function setTool(t) {
   if (t !== 'pick') lastTool = t;
   board.setTool(t);
-  for (const b of document.querySelectorAll('#pens .pen')) b.setAttribute('aria-pressed', t === 'pen' ? b.dataset.pen === board.pen : (t === 'fill' && b.dataset.tool === 'fill'));
+  for (const b of document.querySelectorAll('#pens .pen, #funPens .pen')) b.setAttribute('aria-pressed', t === 'pen' ? b.dataset.pen === board.pen : (t === 'fill' && b.dataset.tool === 'fill'));
   for (const b of document.querySelectorAll('#shapes .pen')) b.setAttribute('aria-pressed', t === 'shape' && b.dataset.shape === board.shape);
   $('pickBtn').setAttribute('aria-pressed', t === 'pick');
   if (t === 'pick') toast('Tap the picture to pick its color');
@@ -235,22 +237,8 @@ $('textForm').onsubmit = async e => {
   $('textIn').value = ''; $('textIn').blur(); count('text'); changed();
 };
 
-// ---------- 只在 app 里：四格真截图，点开看大图、去下载 ----------
-const APP_ONLY = {
-  light: ['Light it up', 'Give your drawing sunset, moonlight, dawn or gold — the light comes from the cloud itself.', 'img/app-light.jpg'],
-  judge: ['It says what it sees', 'A little judge on your phone looks at your drawing and guesses what it is. No internet needed.', 'img/app-judge.jpg'],
-  gallery: ['Your own gallery', 'Every drawing is kept, framed and hung in galleries that grow as you draw.', 'img/app-gallery.jpg'],
-  sky: ['Any sky — even yours', 'Point your camera up and draw on today’s sky, or pick from more than a hundred real clouds, winter skies and rainbows.', 'img/app-sky.jpg'],
-};
-for (const b of document.querySelectorAll('.appgrid button')) b.onclick = () => {
-  const [title, line, img] = APP_ONLY[b.dataset.app];
-  $('appTitle').textContent = title; $('appLine').textContent = line; $('appImg').src = img; $('appImg').alt = 'Cloudia app: ' + title;
-  $('appSheet').hidden = false; count('app-' + b.dataset.app);
-};
-$('appClose').onclick = () => { $('appSheet').hidden = true; };
-$('appSheet').onclick = e => { if (e.target === $('appSheet')) $('appSheet').hidden = true; };
-$('appStore').addEventListener('click', () => count('store-tools'));
-if (android) { const a = $('appStore'); a.removeAttribute('href'); a.textContent = 'Cloudia is on iPhone & iPad'; a.style.opacity = .6; }
+$('appNoteLink').addEventListener('click', () => count('store-note'));
+if (android) { const a = $('appNoteLink'); a.removeAttribute('href'); }
 
 // ---------- 页签 ----------
 function tab(which) {
@@ -280,7 +268,6 @@ $('askForm').onsubmit = e => {
 // ---------- 键盘（电脑上） ----------
 const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !/^(range|checkbox|color)$/.test(a.type); };
 addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('appSheet').hidden) { $('appSheet').hidden = true; return; }
   if (e.key === 'Escape') { if (board.tool === 'pick') setTool(lastTool); else if (focused) setFocus(false); return; }
   if (stage !== 'draw' || typing()) return;
   const cmd = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
@@ -410,7 +397,7 @@ function rooms() {
     for (const i of room.items) {
       const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i); if (i === id) a.setAttribute('aria-current', 'true');
       const im = new Image(); im.loading = 'lazy'; im.alt = M.items[i].label || '';
-      im.src = M.items[i].kind === 'paper' ? makePaper(i.replace('paper-', ''), 'wide', 0.18) : `thumbs/${i}.jpg`;
+      im.src = M.items[i].kind === 'paper' ? makePaper(i.replace('paper-', ''), 'wide', 0.18) : `thumbs/${i}.webp`;
       if (M.items[i].kind === 'paper') { im.alt = PAPERS[i.replace('paper-', '')].name + ' paper'; a.classList.add('paperthumb'); a.dataset.name = PAPERS[i.replace('paper-', '')].name; }
       a.appendChild(im); $('grid').appendChild(a);
     }
@@ -471,7 +458,7 @@ function setAspect(k) {
 function allSkies() { return M.rooms.filter(r => r.id !== 'blank').flatMap(r => r.items); }
 function thumbLink(i, onClick) {
   const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i);
-  const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.jpg`; im.alt = M.items[i].label ? `A sky where we saw ${named(M.items[i].label)}` : 'A sky'; a.appendChild(im);
+  const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.webp`; im.alt = M.items[i].label ? `A sky where we saw ${named(M.items[i].label)}` : 'A sky'; a.appendChild(im);
   if (onClick) a.onclick = e => { e.preventDefault(); onClick(i); };
   return a;
 }
@@ -545,14 +532,16 @@ function credit() {
 function boot() {
   credit(); rooms(); tray(); tab('draw'); setTool('pen'); setColor(COLORS[0]);
   (ITEM.saw || []).forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = named(s.word); b.onclick = () => showOurs(i); $('chips').appendChild(b); });
+  if (!paperMode) for (const f of [fig, $('ours')]) { f.style.backgroundImage = `url(thumbs/${ITEM.id}.webp)`; f.style.aspectRatio = `${ITEM.w} / ${ITEM.h}`; }
+  fig.classList.add('loading');
   photo.alt = ITEM.kind === 'oldsky' ? `${ITEM.credit.title}, a painting of the sky` : 'A real cloud';
   fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); bleed();
   photo.onload = () => {
+    fig.classList.remove('loading');
     board.resize(); restore(); changed(); previews();
     photo.onload = () => { board.resize(); previews(); };   // 之后换纸、换画幅只重排，不再读档
     if (paperMode) paperControls(); else carryIn();
   };
-  if (paperMode) { const sky = document.querySelector('.appgrid [data-app=sky]'); sky.parentElement.prepend(sky); }
   photo.src = ITEM.src; $('photo2').src = ITEM.src;
   $('photo2').onload = () => { if (stage === 'reveal') showOurs(showing); };
   let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => {
@@ -569,8 +558,9 @@ if (paperMode) {
   const [W, H] = ASPECTS[aspect];
   ITEM = { id: 'paper', kind: 'paper', src: makePaper(paperKind, aspect), w: W, h: H, saw: [] };
   boot();
-} else {
-  const s = document.createElement('script'); s.src = `items/${id}.js`;
-  s.onload = () => { ITEM = window.ITEM; boot(); };
-  document.head.appendChild(s);
+} else if (window.ITEM && window.ITEM.id === id) { ITEM = window.ITEM; boot(); }
+else {
+  const s = window.__item || Object.assign(document.createElement('script'), { src: `items/${id}.js` });
+  s.addEventListener('load', () => { ITEM = window.ITEM; boot(); });
+  if (!s.parentNode) document.head.appendChild(s);
 }

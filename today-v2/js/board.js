@@ -6,7 +6,10 @@
 import { byId as STICKER, paint as paintSticker, paintText, textRatio } from './stickers.js';
 
 export const PENS = ['ink', 'pencil', 'brush', 'marker', 'highlighter', 'crayon', 'calligraphy', 'airbrush', 'neon', 'rainbow', 'dashed', 'eraser'];
-export const PEN_NAMES = { ink: 'Ink', pencil: 'Pencil', brush: 'Brush', marker: 'Marker', highlighter: 'Highlighter', crayon: 'Crayon', calligraphy: 'Calligraphy', airbrush: 'Airbrush', neon: 'Neon', rainbow: 'Rainbow', dashed: 'Dashed', eraser: 'Eraser' };
+// 11-18 第二包「好玩的笔」：一路盖章（闪光、爱心、泡泡、彩纸屑、爪印、毛）和两种质感（水彩、粉笔）
+export const FUN_PENS = ['sparkle', 'hearts', 'bubbles', 'confetti', 'paws', 'fur', 'watercolor', 'chalk'];
+export const PEN_NAMES = { ink: 'Ink', pencil: 'Pencil', brush: 'Brush', marker: 'Marker', highlighter: 'Highlighter', crayon: 'Crayon', calligraphy: 'Calligraphy', airbrush: 'Airbrush', neon: 'Neon', rainbow: 'Rainbow', dashed: 'Dashed', eraser: 'Eraser',
+  sparkle: 'Sparkle', hearts: 'Hearts', bubbles: 'Bubbles', confetti: 'Confetti', paws: 'Paw prints', fur: 'Fur', watercolor: 'Watercolor', chalk: 'Chalk' };
 export const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
 export const COLORS = ['#1A1B24', '#FFFFFF', '#E5484D', '#F28C28', '#F5C542', '#3FA45B', '#3B6FE0', '#E66FA8'];
 export const SYMS = { off: 1, m2: 2, m4: 4, r6: 6 };
@@ -16,7 +19,11 @@ const PEN = {
   highlighter: { k: 3.6, alpha: 0.38 }, crayon: { k: 1.6, alpha: 1 }, calligraphy: { k: 2.4, alpha: 1 }, airbrush: { k: 4.5, alpha: 1 },
   neon: { k: 1.2, alpha: 1, full: true }, rainbow: { k: 1.4, alpha: 1 }, dashed: { k: 1, alpha: 1, full: true }, eraser: { k: 3.2, alpha: 1 },
   shape: { k: 1, alpha: 1, full: true },
+  sparkle: { k: 3.2, alpha: 1, full: true }, hearts: { k: 3.4, alpha: 1, full: true }, bubbles: { k: 3.4, alpha: 1, full: true },
+  confetti: { k: 3.8, alpha: 1, full: true }, paws: { k: 3.2, alpha: 1, full: true }, fur: { k: 2.6, alpha: 1, full: true },
+  watercolor: { k: 3.2, alpha: 0.6, full: true }, chalk: { k: 2.2, alpha: 0.88 },
 };
+const STAMP = new Set(['sparkle', 'hearts', 'bubbles', 'confetti', 'paws', 'fur']);
 /** 粗细滑杆 1…100 → 线宽（照片宽的比例） */
 export function sizeToWidth(n) { return 0.0012 + Math.pow(n / 100, 1.6) * 0.03; }
 const SNAP_EVERY = 12;
@@ -24,7 +31,7 @@ const SNAP_EVERY = 12;
 // ---------- 纸纹：每种颜色一块颗粒图，当描边的图案（蜡笔粗、铅笔细） ----------
 const grainCache = new Map();
 function grain(ctx, color, fine) {
-  const key = color + (fine ? 'f' : 'c');
+  const key = color + (fine === 'chalk' ? 'k' : fine ? 'f' : 'c');
   if (!grainCache.has(key)) {
     const n = fine ? 64 : 96, c = document.createElement('canvas'); c.width = c.height = n;
     const g = c.getContext('2d'), img = g.createImageData(n, n);
@@ -34,7 +41,7 @@ function grain(ctx, color, fine) {
     for (let i = 0; i < n * n; i++) {
       const a = rnd();
       img.data[i * 4] = r; img.data[i * 4 + 1] = gg; img.data[i * 4 + 2] = b;
-      img.data[i * 4 + 3] = fine ? (a < 0.45 ? 0 : Math.round(120 + a * 135)) : (a < 0.28 ? 0 : Math.round(150 + a * 105));
+      img.data[i * 4 + 3] = fine === 'chalk' ? (a < 0.42 ? 0 : Math.round(170 + a * 85)) : fine ? (a < 0.45 ? 0 : Math.round(120 + a * 135)) : (a < 0.28 ? 0 : Math.round(150 + a * 105));
     }
     g.putImageData(img, 0, 0);
     grainCache.set(key, c);
@@ -68,8 +75,9 @@ function drawOne(ctx, s, W, H, from, tail) {
   const col = s.t === 'eraser' ? '#000' : s.c;
   if (s.t === 'shape') return drawShape(ctx, s, W, H);
   if (s.t === 'airbrush') return drawSpray(ctx, s, W, H, from);
-  if (s.t === 'neon' || s.t === 'dashed') return drawWhole(ctx, s, W, H);
-  if (s.t === 'crayon' || s.t === 'pencil') ctx.strokeStyle = ctx.fillStyle = grain(ctx, col, s.t === 'pencil');
+  if (s.t === 'neon' || s.t === 'dashed' || s.t === 'watercolor') return drawWhole(ctx, s, W, H);
+  if (STAMP.has(s.t)) return drawStamps(ctx, s, W, H);
+  if (s.t === 'crayon' || s.t === 'pencil' || s.t === 'chalk') ctx.strokeStyle = ctx.fillStyle = grain(ctx, col, s.t === 'chalk' ? 'chalk' : s.t === 'pencil');
   else ctx.strokeStyle = ctx.fillStyle = col;
   if (s.t === 'highlighter') ctx.lineCap = 'butt';
   if (p.length === 1) {
@@ -105,6 +113,11 @@ function pathOf(ctx, p, W, H) {
 }
 function drawWhole(ctx, s, W, H) {
   const lw = s.w * W;
+  if (s.t === 'watercolor') {   // 水彩：几遍由宽到窄、由淡到浓，边是软的，中间更饱
+    ctx.strokeStyle = s.c;
+    for (const [k, a] of [[1.25, 0.18], [1.0, 0.22], [0.75, 0.26], [0.45, 0.3]]) { ctx.globalAlpha = a; ctx.lineWidth = lw * k; pathOf(ctx, s.p, W, H); ctx.stroke(); }
+    ctx.globalAlpha = 1; return;
+  }
   if (s.t === 'dashed') {
     ctx.setLineDash([lw * 2.2, lw * 1.8]); ctx.strokeStyle = s.c; ctx.lineWidth = lw; pathOf(ctx, s.p, W, H); ctx.stroke(); ctx.setLineDash([]); return;
   }
@@ -116,6 +129,68 @@ function drawWhole(ctx, s, W, H) {
   ctx.strokeStyle = s.c; ctx.lineWidth = lw * 1.1; ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = lw * 0.45; ctx.stroke();
 }
+// ---------- 盖章的笔：沿着笔迹每隔一段距离盖一个，位置、大小、角度按笔的种子定死（重放画出来一模一样） ----------
+function stampsAlong(p, W, H, spacing) {
+  const out = []; if (!p.length) return out;
+  out.push({ x: p[0][0] * W, y: p[0][1] * H, a: 0, i: 0 });
+  let carry = 0, k = 1;
+  for (let i = 1; i < p.length; i++) {
+    const ax = p[i - 1][0] * W, ay = p[i - 1][1] * H, bx = p[i][0] * W, by = p[i][1] * H, L = Math.hypot(bx - ax, by - ay);
+    if (!L) continue;
+    const a = Math.atan2(by - ay, bx - ax); let d = spacing - carry;
+    while (d <= L) { out.push({ x: ax + (bx - ax) * d / L, y: ay + (by - ay) * d / L, a, i: k++ }); d += spacing; }
+    carry = L - (d - spacing);
+  }
+  if (out.length > 1) out[0].a = out[1].a;
+  return out;
+}
+const CONFETTI = ['#E5484D', '#F28C28', '#F5C542', '#3FA45B', '#3B6FE0', '#E66FA8', '#8E5BD8', '#3BB8E0'];
+function heartPath(ctx, x, y, r) {
+  ctx.beginPath(); ctx.moveTo(x, y + r * 0.9);
+  ctx.bezierCurveTo(x - r * 1.5, y - r * 0.1, x - r * 0.6, y - r * 1.25, x, y - r * 0.45);
+  ctx.bezierCurveTo(x + r * 0.6, y - r * 1.25, x + r * 1.5, y - r * 0.1, x, y + r * 0.9); ctx.closePath();
+}
+function drawStamps(ctx, s, W, H) {
+  const w = s.w * W, seed = s.seed || 7;
+  const sp = { sparkle: 0.8, hearts: 1.15, bubbles: 0.75, confetti: 0.32, paws: 1.5, fur: 0.11 }[s.t] * w;
+  const pts = stampsAlong(s.p, W, H, Math.max(1.5, sp));
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const q of pts) {
+    const rnd = rng(seed * 104729 + q.i * 7907);
+    if (s.t === 'sparkle') {
+      const ox = (rnd() - 0.5) * w * 1.1, oy = (rnd() - 0.5) * w * 1.1, r = w * (0.16 + rnd() * 0.34);
+      ctx.save(); ctx.translate(q.x + ox, q.y + oy); ctx.rotate(rnd() * 0.6);
+      ctx.beginPath(); for (let j = 0; j < 8; j++) { const a = j * Math.PI / 4, rr = j % 2 ? r * 0.26 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath();
+      ctx.fillStyle = s.c; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.16, 0, 7); ctx.fill(); ctx.restore();
+      if (rnd() < 0.5) { ctx.fillStyle = s.c; ctx.beginPath(); ctx.arc(q.x + (rnd() - 0.5) * w * 1.4, q.y + (rnd() - 0.5) * w * 1.4, w * 0.05, 0, 7); ctx.fill(); }
+    } else if (s.t === 'hearts') {
+      const r = w * (0.32 + rnd() * 0.14);
+      ctx.save(); ctx.translate(q.x, q.y); ctx.rotate((rnd() - 0.5) * 0.7); heartPath(ctx, 0, 0, r); ctx.fillStyle = s.c; ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(-r * 0.45, -r * 0.45, r * 0.16, r * 0.1, -0.6, 0, 7); ctx.fill(); ctx.restore();
+    } else if (s.t === 'bubbles') {
+      const r = w * (0.12 + rnd() * 0.42), ox = (rnd() - 0.5) * w * 0.8, oy = (rnd() - 0.5) * w * 0.8;
+      ctx.beginPath(); ctx.arc(q.x + ox, q.y + oy, r, 0, 7); ctx.lineWidth = Math.max(1, w * 0.06); ctx.strokeStyle = s.c; ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x + ox, q.y + oy, r * 0.62, Math.PI * 1.1, Math.PI * 1.45); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+    } else if (s.t === 'confetti') {
+      ctx.save(); ctx.translate(q.x + (rnd() - 0.5) * w, q.y + (rnd() - 0.5) * w); ctx.rotate(rnd() * Math.PI);
+      ctx.fillStyle = CONFETTI[Math.floor(rnd() * CONFETTI.length)];
+      if (rnd() < 0.3) { ctx.beginPath(); ctx.arc(0, 0, w * 0.08, 0, 7); ctx.fill(); } else ctx.fillRect(-w * 0.11, -w * 0.045, w * 0.22, w * 0.09);
+      ctx.restore();
+    } else if (s.t === 'paws') {
+      const side = q.i % 2 ? 1 : -1, nx = -Math.sin(q.a), ny = Math.cos(q.a);
+      ctx.save(); ctx.translate(q.x + nx * side * w * 0.32, q.y + ny * side * w * 0.32); ctx.rotate(q.a + Math.PI / 2 + (rnd() - 0.5) * 0.25);
+      ctx.fillStyle = s.c; const r = w * 0.34;
+      ctx.beginPath(); ctx.ellipse(0, r * 0.35, r * 0.62, r * 0.52, 0, 0, 7); ctx.fill();
+      for (const [tx, ty] of [[-0.62, -0.42], [-0.22, -0.8], [0.22, -0.8], [0.62, -0.42]]) { ctx.beginPath(); ctx.ellipse(tx * r, ty * r, r * 0.22, r * 0.27, tx * 0.4, 0, 7); ctx.fill(); }
+      ctx.restore();
+    } else if (s.t === 'fur') {
+      const side = rnd() < 0.5 ? -1 : 1, len = w * (0.35 + rnd() * 0.6), ang = q.a + side * (Math.PI / 2 - 0.35 + (rnd() - 0.5) * 0.5);
+      ctx.strokeStyle = s.c; ctx.lineWidth = Math.max(0.8, w * 0.055);
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.quadraticCurveTo(q.x + Math.cos(ang) * len * 0.5 + Math.cos(q.a) * len * 0.2, q.y + Math.sin(ang) * len * 0.5 + Math.sin(q.a) * len * 0.2, q.x + Math.cos(ang) * len, q.y + Math.sin(ang) * len); ctx.stroke();
+    }
+  }
+}
+
 function drawSpray(ctx, s, W, H, from) {
   const p = s.p, R = s.w * W / 2, dot = Math.max(0.6, R * 0.07);
   ctx.fillStyle = s.c;
@@ -523,7 +598,7 @@ export class Board {
     if (this.opacity < 0.999) s.o = +this.opacity.toFixed(2);
     if (this.sym !== 'off') s.sym = this.sym;
     if (s.t === 'rainbow') s.h0 = Math.round(Math.random() * 360);
-    if (s.t === 'airbrush') s.seed = 1 + Math.floor(Math.random() * 1e6);
+    if (s.t === 'airbrush' || STAMP.has(s.t)) s.seed = 1 + Math.floor(Math.random() * 1e6);
     this.cur = s; this.curId = e.pointerId; this.last = { x: e.clientX, y: e.clientY, t: performance.now(), w: base };
     this.wet.style.opacity = alphaOf(s);
     if (s.t === 'eraser') { this._eraseFrom = 1; this._paintEraser(); }
