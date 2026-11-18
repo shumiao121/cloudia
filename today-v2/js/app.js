@@ -3,6 +3,7 @@
 import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStroke } from './board.js';
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
+import { enterWorld } from './world.js';
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -385,12 +386,14 @@ $('share').onclick = async () => {
 // ---------- 走进云里：一段十几秒的小片子（js/inside.js） ----------
 $('stepIn').onclick = () => {
   count('inside');
-  const go = stepInside({
+  const opts = {
     photo, board, count,
     line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
     sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
     storeHref: 'https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=web-inside&mt=8',
-  });
+  };
+  // 三维的云（WebGL）；浏览器不支持就退回平面推近那版
+  const go = enterWorld(opts).then(w => w || stepInside(opts));
   if (location.hostname === 'localhost') go.then(c => { window.__inside = c; });   // 本机预览时留个把手，测试能定格看某一秒
 };
 $('save').onclick = async () => { if (!pair) await makePair(); count('save'); sheet(); };

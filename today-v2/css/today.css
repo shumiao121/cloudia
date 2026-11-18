@@ -236,3 +236,6 @@ figure.board.loading img { opacity: 0; }
 .inside-bar .primary { background: #1A1B24; color: #F7F4EC; border-color: #1A1B24; }
 .inside-bar button:not(.primary) { background: #fff; color: #1A1B24; border-color: #D9D4C7; }
 .inside-app { color: #945D16; font-weight: 600; padding: 0 10px; white-space: nowrap; }
+.inside-hint { position: absolute; top: max(18px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); margin: 0; padding: 7px 14px; border-radius: 999px;
+  background: rgba(20, 24, 30, .55); color: #fff; font-size: 14px; white-space: nowrap; pointer-events: none; }
+.inside canvas { touch-action: none; cursor: grab; }
