@@ -68,7 +68,7 @@ async function show(w) {
   cur = w; for (const b of bar.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', String(b.dataset.w === w.name));
   if (mesh) { scene.remove(mesh); mesh.dispose?.(); mesh = null; }
   info.textContent = `Loading ${w.name} (${res})…`; t0 = performance.now();
-  const url = `${w.name}/${res}.spz`;
+  const url = new URL(`${w.name}/${res}.spz`, location.href).href;   // Spark 在后台 worker 里取文件，相对路径在那里解析不了，必须给完整地址
   mesh = new SplatMesh({ url });
   if (flip) mesh.quaternion.set(1, 0, 0, 0);   // World Labs 的 splat 是 y 朝下，翻过来
   scene.add(mesh);
