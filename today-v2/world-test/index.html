@@ -35,10 +35,10 @@ import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 
 const WORLDS = await (await fetch('worlds.json', { cache: 'no-store' })).json();   // [{name, file, mb}]
 const params = new URLSearchParams(location.search);
-let res = params.get('res') || (matchMedia('(pointer: coarse)').matches ? '100k' : '500k');
+let res = params.get('res') || '500k';   // 11-18 他嫌 100k 糊：手机也默认 50 万点
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
@@ -61,11 +61,26 @@ el.onpointermove = e => {
 const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
 el.onpointerup = up; el.onpointercancel = up;
 el.onwheel = e => { e.preventDefault(); walk(-e.deltaY * 0.004); };
-function walk(d) { const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)); pos.addScaledVector(f, d); pos.clampLength(0, 6); }
+function walk(d) { if (mode === 'pano') return; const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)); pos.addScaledVector(f, d); pos.clampLength(0, 6); }
 
-let mesh = null, cur = null, t0 = 0;
+let mesh = null, cur = null, t0 = 0, mode = '3d';
+// 全景模式：同一个世界的 360° 全景图贴在大球里面（只能转头，不能走，但最清楚），用来和 3D 比清晰度
+const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 64, 32), new THREE.MeshBasicMaterial({ side: THREE.BackSide }));
+sky.scale.set(-1, 1, 1); sky.rotation.y = Math.PI; sky.visible = false; scene.add(sky);
+const loader = new THREE.TextureLoader();
 async function show(w) {
-  cur = w; for (const b of bar.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', String(b.dataset.w === w.name));
+  cur = w; if (w.mb && !w.mb[res]) res = '500k';
+  mb2.hidden = !w.pano; if (!w.pano && mode === 'pano') mode = '3d';
+  if (mode === 'pano') {
+    for (const b of bar.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', String(b.dataset.w === w.name));
+    if (mesh) { scene.remove(mesh); mesh.dispose?.(); mesh = null; }
+    info.textContent = `Loading ${w.name} panorama…`; t0 = performance.now();
+    const tex = await loader.loadAsync(`${w.name}/pano.jpg`); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    sky.material.map = tex; sky.material.needsUpdate = true; sky.visible = true; pos.set(0, 0, 0);
+    info.dataset.base = `${w.name} · panorama ${w.mb.pano} MB · loaded in ${((performance.now() - t0) / 1000).toFixed(1)}s`;
+    return;
+  }
+  sky.visible = false; for (const b of bar.querySelectorAll('[data-w]')) b.setAttribute('aria-pressed', String(b.dataset.w === w.name));
   if (mesh) { scene.remove(mesh); mesh.dispose?.(); mesh = null; }
   info.textContent = `Loading ${w.name} (${res})…`; t0 = performance.now();
   const url = new URL(`${w.name}/${res}.spz`, location.href).href;   // Spark 在后台 worker 里取文件，相对路径在那里解析不了，必须给完整地址
@@ -78,8 +93,10 @@ async function show(w) {
 }
 const bar = document.getElementById('bar'), info = document.getElementById('info');
 for (const w of WORLDS) { const b = document.createElement('button'); b.dataset.w = w.name; b.textContent = w.label || w.name; b.onclick = () => show(w); bar.appendChild(b); }
-const rb = document.createElement('button'); rb.textContent = 'Res: ' + res; rb.onclick = () => { res = res === '100k' ? '500k' : '100k'; rb.textContent = 'Res: ' + res; show(cur); }; bar.appendChild(rb);
+const RES = ['100k', '500k', 'full_res'];
+const rb = document.createElement('button'); rb.textContent = 'Res: ' + res; rb.onclick = () => { const have = RES.filter(r => cur.mb && cur.mb[r]); res = have[(have.indexOf(res) + 1) % have.length]; rb.textContent = 'Res: ' + res; show(cur); }; bar.appendChild(rb);
 const fb = document.createElement('button'); fb.textContent = 'Flip'; fb.onclick = () => { flip = !flip; if (mesh) mesh.quaternion.set(flip ? 1 : 0, 0, 0, flip ? 0 : 1); }; bar.appendChild(fb);
+const mb2 = document.createElement('button'); mb2.textContent = 'Mode: 3D'; mb2.onclick = () => { mode = mode === '3d' ? 'pano' : '3d'; mb2.textContent = mode === '3d' ? 'Mode: 3D' : 'Mode: Panorama'; show(cur); }; bar.appendChild(mb2);
 const ib = document.createElement('button'); ib.textContent = 'Reset'; ib.onclick = () => { yaw = pitch = 0; pos.set(0, 0, 0); }; bar.appendChild(ib);
 
 // 帧率

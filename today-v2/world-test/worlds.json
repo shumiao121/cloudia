@@ -1,5 +1,25 @@
 [
  {
+  "name": "pink-s37-raw",
+  "label": "Pink ring",
+  "mb": {
+   "100k": 1.5,
+   "500k": 8.0,
+   "pano": 0.7
+  },
+  "pano": true
+ },
+ {
+  "name": "pink-s58-raw",
+  "label": "Pink rays",
+  "mb": {
+   "100k": 1.4,
+   "500k": 8.0,
+   "pano": 0.6
+  },
+  "pano": true
+ },
+ {
   "name": "mirror-s37-raw",
   "label": "Pink clouds",
   "mb": {
