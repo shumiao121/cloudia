@@ -413,3 +413,6 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
   play();
   return { close, duration: TI, particles: P.n, mode: S.diorama ? 'diorama' : 'cloud', stats: S.stats, cam, seek(t) { at = t; frame(performance.now()); }, look(yaw, pitch, dist) { at = TI + 2; Object.assign(cam, { user: true, yaw, pitch, dist: dist || cam.dist, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
+
+// 给「天空之镜」（sky.js）共用的小工具
+export { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay };

@@ -4,6 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
+import { enterSky } from './sky.js';
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -392,8 +393,8 @@ $('stepIn').onclick = () => {
     sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
     storeHref: 'https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=web-inside&mt=8',
   };
-  // 三维的云（WebGL）；浏览器不支持就退回平面推近那版
-  const go = enterWorld(opts).then(w => w || stepInside(opts));
+  // 天空之镜（全景图 + 浮在空中的 3D 画卡片）；没有 WebGL 或素材没加载上，退回粒子云，再退回平面推近
+  const go = enterSky(opts).then(w => w || enterWorld(opts)).then(w => w || stepInside(opts));
   if (location.hostname === 'localhost') go.then(c => { window.__inside = c; });   // 本机预览时留个把手，测试能定格看某一秒
 };
 $('save').onclick = async () => { if (!pair) await makePair(); count('save'); sheet(); };
