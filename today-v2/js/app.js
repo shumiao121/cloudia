@@ -395,7 +395,7 @@ $('stepIn').onclick = () => {
   };
   // 天空之镜（全景图 + 浮在空中的 3D 画卡片）；没有 WebGL 或素材没加载上，退回粒子云，再退回平面推近
   const go = enterSky(opts).then(w => w || enterWorld(opts)).then(w => w || stepInside(opts));
-  if (location.hostname === 'localhost') go.then(c => { window.__inside = c; });   // 本机预览时留个把手，测试能定格看某一秒
+  if (location.hostname === 'localhost' || params.has('debug')) go.then(c => { window.__inside = c; });   // 测试时留个把手（本机或 ?debug）   // 本机预览时留个把手，测试能定格看某一秒
 };
 $('save').onclick = async () => { if (!pair) await makePair(); count('save'); sheet(); };
 $('closeSheet').onclick = () => { $('sheet').hidden = true; };
