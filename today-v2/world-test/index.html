@@ -55,7 +55,7 @@ el.onpointerdown = e => { el.setPointerCapture(e.pointerId); pts.set(e.pointerId
 el.onpointermove = e => {
   const p = pts.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p[0], dy = e.clientY - p[1]; p[0] = e.clientX; p[1] = e.clientY;
-  if (pts.size === 1) { yaw += dx * 0.004; pitch = Math.max(-1.4, Math.min(1.4, pitch + dy * 0.004)); }
+  if (pts.size === 1) { yaw += dx * 0.004; pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.004)); }
   else if (pts.size === 2) { const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) walk((d - pinch) * 0.01); pinch = d; }
 };
 const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
