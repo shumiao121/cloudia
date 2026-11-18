@@ -84,7 +84,7 @@ async function show(w) {
   if (mesh) { scene.remove(mesh); mesh.dispose?.(); mesh = null; }
   info.textContent = `Loading ${w.name} (${res})…`; t0 = performance.now();
   const url = new URL(`${w.name}/${res}.spz`, location.href).href;   // Spark 在后台 worker 里取文件，相对路径在那里解析不了，必须给完整地址
-  mesh = new SplatMesh({ url });
+  mesh = new SplatMesh({ url }); window.__mesh = mesh;
   if (flip) mesh.quaternion.set(1, 0, 0, 0);   // World Labs 的 splat 是 y 朝下，翻过来
   scene.add(mesh);
   await mesh.initialized;
@@ -108,7 +108,7 @@ renderer.setAnimationLoop(() => {
   frames++; const now = performance.now();
   if (now - last > 1000) { fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now; if (info.dataset.base) info.textContent = `${info.dataset.base} · ${fps} fps`; }
 });
-show(WORLDS[0]);
+show(WORLDS.find(w => w.name === params.get('w')) || WORLDS[0]);
 </script>
 </body>
 </html>
