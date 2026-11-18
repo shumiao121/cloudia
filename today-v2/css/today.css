@@ -201,3 +201,15 @@ footer a { color: inherit; }
 .appcard img { width: 100%; border-radius: 12px; display: block; }
 .appcard h2 { margin-top: 4px; }
 .appcard p { margin: 0; }
+
+/* ---------- 白纸：纸和画幅的切换条 ---------- */
+.paperbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.paperbar .chips { margin: 0; }
+.paperbar .chip { padding: 6px 12px; font-size: 14px; display: inline-flex; gap: 6px; }
+.paperbar .chip i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--hair); display: inline-block; }
+.seg.mini button:disabled { opacity: .35; }
+.grid.pick a { cursor: pointer; }
+#stage.focus .paperbar { display: none; }
+.grid a.paperthumb { border: 1px solid var(--hair); }
+.grid a.paperthumb::before { content: attr(data-name); position: absolute; left: 8px; bottom: 6px; font-size: 12.5px; font-weight: 600; color: #5D6771; }
+.grid a.paperthumb[data-name="Night"]::before { color: #C9D3E6; }
