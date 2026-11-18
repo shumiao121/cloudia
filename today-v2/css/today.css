@@ -213,3 +213,10 @@ footer a { color: inherit; }
 .grid a.paperthumb { border: 1px solid var(--hair); }
 .grid a.paperthumb::before { content: attr(data-name); position: absolute; left: 8px; bottom: 6px; font-size: 12.5px; font-weight: 600; color: #5D6771; }
 .grid a.paperthumb[data-name="Night"]::before { color: #C9D3E6; }
+
+.appnote { margin: 0; font-size: 13.5px; color: var(--ink-soft); border-top: 1px solid var(--hair); padding-top: 10px; }
+.appnote a { color: var(--amber-deep); font-weight: 600; }
+/* 大图到之前：缩略图模糊垫着，画框先按比例撑开，不跳 */
+figure.board { background-size: cover; background-position: center; }
+figure.board img { transition: opacity .35s ease; }
+figure.board.loading img { opacity: 0; }
