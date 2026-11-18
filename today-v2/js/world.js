@@ -45,7 +45,10 @@ function analyse(photo, gw) {
     if (sky > 0.6) { const v = Math.floor(i / gw) / gh, a = acc[v < 0.4 ? 0 : v > 0.6 ? 2 : 1]; a[0] += r; a[1] += gg; a[2] += b; a[3]++; }
   }
   // 没什么蓝天（老画、阴天）：改成「布景」——最亮的那些云鼓出来，其余整张图当背后一块平板
-  const skyN = acc.reduce((s, a) => s + a[3], 0), diorama = skyN < n * 0.12;
+  let cov = 0, edgeN = 0, edgeC = 0; for (let i = 0; i < n; i++) if (cloud[i] > 0.5) cov++;
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (x < 2 || y < 2 || x >= gw - 2 || y >= gh - 2) { edgeN++; if (cloud[y * gw + x] > 0.5) edgeC++; }
+  // 几乎没有蓝天、云占六成以上、或者照片四边一半以上被云切着（满天的云）：立体出来都是一块砖，改成布景
+  const skyN = acc.reduce((s, a) => s + a[3], 0), diorama = skyN < n * 0.12 || cov > n * 0.6 || edgeC > edgeN * 0.45;
   if (diorama) {
     const lum = new Float32Array(n);
     for (let i = 0; i < n; i++) lum[i] = 0.3 * d[i * 4] + 0.59 * d[i * 4 + 1] + 0.11 * d[i * 4 + 2];
@@ -58,6 +61,11 @@ function analyse(photo, gw) {
   const avg = all[3] > n * 0.03 ? all.slice(0, 3).map(v => v / all[3]) : [150, 172, 205];
   const pick = a => a[3] > n * 0.01 ? a.slice(0, 3).map(v => v / a[3]) : avg;
   const top = pick(acc[0]), bot = pick(acc[2]);
+  // 云碰到照片边的地方：往边上越来越薄、越淡，转过去不会是一刀切的平面
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const u = (x + 0.5) / gw, v = (y + 0.5) / gh;
+    cloud[y * gw + x] *= smooth(0, 0.12, u) * smooth(0, 0.12, 1 - u) * smooth(0, 0.12 * A, v) * smooth(0, 0.12 * A, 1 - v);
+  }
   // 离云边的距离（两遍倒角距离）
   const dist = new Float32Array(n), INF = 1e6;
   for (let i = 0; i < n; i++) dist[i] = cloud[i] > 0.4 ? INF : 0;
@@ -79,7 +87,7 @@ function analyse(photo, gw) {
     if (x > 0 && y < gh - 1) v = Math.min(v, dist[i + gw - 1] + 1.414);
     dist[i] = v;
   }
-  return { A, gw, gh, data: d, cloud, dist, avg, top, bot, diorama };
+  return { A, gw, gh, data: d, cloud, dist, avg, top, bot, diorama, stats: { sky: skyN / n, cov: cov / n, edge: edgeC / edgeN } };
 }
 
 // ---------- 粒子：主角那朵（照片变的）＋ 远处几团 ＋ 脚下云海 ----------
@@ -152,6 +160,19 @@ void main(){ vUV = aUV; gl_Position = uVP * vec4(aPos + uOff, 1.0); }`;
 const CARD_FS = `precision mediump float; varying vec2 vUV; uniform sampler2D uT; uniform float uShade;
 void main(){ vec4 c = texture2D(uT, vUV); if (c.a < 0.06) discard; gl_FragColor = vec4(c.rgb * uShade * c.a, c.a); }`;
 
+// 一张（几张叠起来的）图，四边各一条渐变擦掉（Safari 的画布不认 filter，所以不用模糊）
+function feather(srcs, w, h, edge) {
+  const c = mk(w, h), cg = c.getContext('2d');
+  for (const s of [].concat(srcs)) cg.drawImage(s, 0, 0, w, h);
+  const m = mk(w, h), mg = m.getContext('2d'), e = Math.round(Math.min(w, h) * edge);
+  mg.fillStyle = '#000'; mg.fillRect(0, 0, w, h); mg.globalCompositeOperation = 'destination-out';
+  for (const [x0, y0, x1, y1, rx, ry, rw, rh] of [[0, 0, e, 0, 0, 0, e, h], [w, 0, w - e, 0, w - e, 0, e, h], [0, 0, 0, e, 0, 0, w, e], [0, h, 0, h - e, 0, h - e, w, e]]) {
+    const gr = mg.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); mg.fillStyle = gr; mg.fillRect(rx, ry, rw, rh);
+  }
+  cg.globalCompositeOperation = 'destination-in'; cg.drawImage(m, 0, 0);
+  return c;
+}
+
 function bboxOf(art) {
   const s = 200 / Math.max(art.width, art.height), w = Math.max(1, Math.round(art.width * s)), h = Math.max(1, Math.round(art.height * s));
   const c = mk(w, h), g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(art, 0, 0, w, h);
@@ -219,18 +240,7 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
 
   const proj = perspective(FOVY, FW / FH, 0.05, 80), tanY = Math.tan(FOVY / 2), tanX = tanY * FW / FH, scale = FH / (2 * tanY);
   // 开场盖在上面的原照片（带你的画）：四边羽化，淡掉时和三维的天接得上
-  const soft = (() => {
-    const w = Math.round(FW / (tanX * D0)), h = Math.round(w / A), c = mk(w, h), cg = c.getContext('2d');   // 正对着、距离 D0 时照片的宽
-    cg.drawImage(photo, 0, 0, w, h); cg.drawImage(art, 0, 0, w, h);
-    const m = mk(w, h), mg = m.getContext('2d'), e = Math.round(Math.min(w, h) * 0.14);
-    // 四边各一条渐变擦掉（Safari 的画布不认 filter，所以不用模糊）
-    mg.fillStyle = '#000'; mg.fillRect(0, 0, w, h); mg.globalCompositeOperation = 'destination-out';
-    for (const [x0, y0, x1, y1, rx, ry, rw, rh] of [[0, 0, e, 0, 0, 0, e, h], [w, 0, w - e, 0, w - e, 0, e, h], [0, 0, 0, e, 0, 0, w, e], [0, h, 0, h - e, 0, h - e, w, e]]) {
-      const gr = mg.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); mg.fillStyle = gr; mg.fillRect(rx, ry, rw, rh);
-    }
-    cg.globalCompositeOperation = 'destination-in'; cg.drawImage(m, 0, 0);
-    return c;
-  })();
+  const soft = feather([photo, art], Math.round(FW / (tanX * D0)), Math.round(FW / (tanX * D0) / A), 0.14);   // 正对着、距离 D0 时照片的宽
   const skyP = compile(gl, SKY_VS, SKY_FS), ptP = compile(gl, PT_VS, PT_FS), cardP = compile(gl, CARD_VS, CARD_FS);
   const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   const ptBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ptBuf); gl.bufferData(gl.ARRAY_BUFFER, P.arr.byteLength, gl.DYNAMIC_DRAW);
@@ -246,7 +256,7 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
   // 布景模式：整张图当背板，放在云后面一点，同样按远近放大，正对着看和原图对齐
   let backTex = null, backBuf = null; const zb = -0.12;
   if (S.diorama) {
-    const pc = mk(1024, 1024 / A); pc.getContext('2d').drawImage(photo, 0, 0, pc.width, pc.height); backTex = texOf(pc);
+    backTex = texOf(feather(photo, 1024, Math.round(1024 / A), 0.16));   // 四边羽化：像一片云墙，不像一块板
     const k = (D0 - zb) / D0, x0 = -k, x1 = k, y0 = halfH * k, y1 = -halfH * k;
     backBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, backBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([x0, y0, 0, 0, 0, x1, y0, 0, 1, 0, x0, y1, 0, 0, 1, x1, y0, 0, 1, 0, x1, y1, 0, 1, 1, x0, y1, 0, 0, 1]), gl.STATIC_DRAW);
@@ -293,7 +303,7 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
       gl.bindBuffer(gl.ARRAY_BUFFER, backBuf);
       gl.enableVertexAttribArray(cardP.loc.aPos); gl.vertexAttribPointer(cardP.loc.aPos, 3, gl.FLOAT, false, 20, 0);
       gl.enableVertexAttribArray(cardP.loc.aUV); gl.vertexAttribPointer(cardP.loc.aUV, 2, gl.FLOAT, false, 20, 12);
-      for (let k = 3; k >= 0; k--) { gl.uniform3f(cardP.loc.uOff, 0, 0, zb - k * 0.012); gl.uniform1f(cardP.loc.uShade, k ? 0.5 : 0.96); gl.drawArrays(gl.TRIANGLES, 0, 6); }
+      gl.uniform3f(cardP.loc.uOff, 0, 0, zb); gl.uniform1f(cardP.loc.uShade, 0.96); gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.disableVertexAttribArray(cardP.loc.aPos); gl.disableVertexAttribArray(cardP.loc.aUV);
     }
     if (card.length) {
@@ -401,5 +411,5 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
   addEventListener('keydown', esc);
   el.querySelector('.inside-x').onclick = close;
   play();
-  return { close, duration: TI, particles: P.n, cam, seek(t) { at = t; frame(performance.now()); }, look(yaw, pitch, dist) { at = TI + 2; Object.assign(cam, { user: true, yaw, pitch, dist: dist || cam.dist, vy: 0, vp: 0 }); frame(performance.now()); } };
+  return { close, duration: TI, particles: P.n, mode: S.diorama ? 'diorama' : 'cloud', stats: S.stats, cam, seek(t) { at = t; frame(performance.now()); }, look(yaw, pitch, dist) { at = TI + 2; Object.assign(cam, { user: true, yaw, pitch, dist: dist || cam.dist, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
