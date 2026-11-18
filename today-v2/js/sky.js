@@ -38,6 +38,19 @@ function maskOf(src, sx, sy, sw, sh, W, H, ox, oy, ow, oh, dil) {
   g.drawImage(src, sx, sy, sw, sh, ox, oy, ow, oh);
   return m;
 }
+// 封闭的轮廓里面填满：从四边往里漫，漫不到、又不是线的地方就是「里面」——熊的轮廓变成一整团熊形的云，不是一圈云绳
+function fillInside(mask) {
+  const W = mask.width, H = mask.height, g = mask.getContext('2d', { willReadFrequently: true }), im = g.getImageData(0, 0, W, H), a = im.data;
+  const wall = new Uint8Array(W * H), seen = new Uint8Array(W * H), st = [];
+  for (let i = 0; i < W * H; i++) wall[i] = a[i * 4 + 3] > 60 ? 1 : 0;
+  const push = i => { if (!wall[i] && !seen[i]) { seen[i] = 1; st.push(i); } };
+  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+  while (st.length) { const i = st.pop(), x = i % W; if (x > 0) push(i - 1); if (x < W - 1) push(i + 1); if (i >= W) push(i - W); if (i < W * (H - 1)) push(i + W); }
+  for (let i = 0; i < W * H; i++) if (!wall[i] && !seen[i]) { a[i * 4] = a[i * 4 + 1] = a[i * 4 + 2] = 255; a[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  return mask;
+}
 // 画 → 云：沿着遮罩撒大小不一的软团，叠成「厚度图」；再加两层噪声让边上起毛；按厚度的起伏打光——
 // 朝上的地方被晚霞照成桃色，中间玫瑰色，背光处蓝灰，薄的边缘半透明。和全景里的积云同一种光。
 function noise2(seed) {
@@ -52,32 +65,68 @@ function cloudify(mask, out, R, seed) {
     const jx = clamp(x + (rnd() - 0.5) * step, 0, W - 1), jy = clamp(y + (rnd() - 0.5) * step, 0, H - 1);
     if (md[(Math.round(jy) * W + Math.round(jx)) * 4 + 3] > 80) pts.push([jx, jy]);
   }
-  // 1) 厚度：软团叠起来；每四个里一个大团往上鼓（积云的「花椰菜」顶）
+  // 1) 厚度：软团叠起来（每团很淡，叠多了才厚，不会一下子饱和成平的）；每三个里一个大团往上鼓（积云的「花椰菜」顶）
   const dc = mk(W, H), dg = dc.getContext('2d', { willReadFrequently: true });
-  const puff = (x, y, r, a) => { const gr = dg.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(0.5, `rgba(255,255,255,${a * 0.6})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); dg.fillStyle = gr; dg.beginPath(); dg.arc(x, y, r, 0, Math.PI * 2); dg.fill(); };
+  // 「相加」叠：重叠越多越厚，每团中心鼓起来——里面才有一个个圆的鼓包，不是一整片平的
+  dg.globalCompositeOperation = 'lighter';
+  const puff = (x, y, r, a) => { const gr = dg.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(0.4, `rgba(255,255,255,${a * 0.7})`); gr.addColorStop(0.75, `rgba(255,255,255,${a * 0.25})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); dg.fillStyle = gr; dg.beginPath(); dg.arc(x, y, r, 0, Math.PI * 2); dg.fill(); };
   pts.forEach(([x, y], i) => {
-    puff(x, y, R * (0.8 + rnd() * 0.6), 0.32);
-    if (i % 4 === 0) puff(x + (rnd() - 0.5) * R, y - R * (0.3 + rnd() * 0.4), R * (1.1 + rnd() * 0.6), 0.22);
+    puff(x, y, R * (0.9 + rnd() * 0.7), 0.075);
+    if (i % 4 === 0) puff(x + (rnd() - 0.5) * R, y - R * (0.4 + rnd() * 0.6), R * (1.6 + rnd() * 1.2), 0.07);   // 大的鼓包
   });
-  const D = dg.getImageData(0, 0, W, H).data, n1 = noise2(seed), n2 = noise2(seed + 7);
-  const den = new Float32Array(W * H), f1 = 1 / (R * 0.7), f2 = 1 / (R * 0.28);
+  const D = dg.getImageData(0, 0, W, H).data, nA = noise2(seed), nB = noise2(seed + 7), nC = noise2(seed + 13);
+  const den = new Float32Array(W * H), fa = 1 / (R * 2.4), fb = 1 / (R * 1.0), fc = 1 / (R * 0.45);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const d0 = D[(y * W + x) * 4 + 3] / 255;
-    den[y * W + x] = d0 <= 0 ? 0 : Math.min(1.2, d0 * 1.5 + (n1(x * f1, y * f1) - 0.5) * 0.35 * d0 + (n2(x * f2, y * f2) - 0.5) * 0.18);
+    const d0 = D[(y * W + x) * 4 + 3] / 255; if (d0 <= 0.01) continue;
+    const fbm = 0.55 * nA(x * fa, y * fa) + 0.35 * nB(x * fb, y * fb) + 0.1 * nC(x * fc, y * fc);   // 0…1：大的起伏为主，一点点细毛
+    den[y * W + x] = Math.min(1.4, d0 * 1.6) * (0.6 + 0.8 * fbm);
   }
-  // 2) 上色：法线来自厚度的起伏，光从上方偏左、朝着人
-  const img = out.getContext('2d').createImageData(W, H), o = img.data, k = R * 0.9;
-  const HI = [255, 228, 208], MID = [232, 192, 186], SH = [112, 124, 142];
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x, d = den[i]; if (d < 0.1) continue;
-    const gx = (den[i - 1] - den[i + 1]) * k, gy = (den[i - W] - den[i + W]) * k;   // 朝外的方向
-    const nz = 1, inv = 1 / Math.hypot(gx, gy, nz), lit = clamp((gx * -0.35 + gy * -0.8 + nz * 0.5) * inv, -1, 1);
-    let sh = clamp(0.5 + lit * 0.55 + (0.5 - y / H) * 0.25 - (d - 0.6) * 0.25, 0, 1);
-    const c = sh < 0.5 ? [0, 1, 2].map(j => lerp(SH[j], MID[j], sh * 2)) : [0, 1, 2].map(j => lerp(MID[j], HI[j], (sh - 0.5) * 2));
-    o[i * 4] = c[0]; o[i * 4 + 1] = c[1]; o[i * 4 + 2] = c[2]; o[i * 4 + 3] = 255 * smooth(0.1, 0.42, d) * 0.97;
+  // 每一列最高的那点：离顶越远越暗（积云顶亮、底平而灰）
+  const top = new Float32Array(W).fill(H);
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (den[y * W + x] > 0.18) { top[x] = y; break; }
+  // 2) 上色：法线来自厚度的起伏（隔三个像素取差，平滑些），光从上方偏左、朝着人
+  const img = out.getContext('2d').createImageData(W, H), o = img.data, k = R * 0.4, S3 = Math.max(3, Math.round(R * 0.25));
+  const HI = [255, 222, 190], MID = [222, 176, 164], SH = [84, 92, 112], RIM = [255, 238, 218];   // 照着全景里的积云：暖桃色的光、石板灰的影
+  const L = (() => { const v = [-0.3, -0.85, 0.45], l = Math.hypot(...v); return v.map(a => a / l); })();
+  for (let y = S3; y < H - S3; y++) for (let x = S3; x < W - S3; x++) {
+    const i = y * W + x, d = den[i]; if (d < 0.06) continue;
+    const gx = (den[i - S3] - den[i + S3]) * k / S3, gy = (den[i - S3 * W] - den[i + S3 * W]) * k / S3;
+    const inv = 1 / Math.hypot(gx, gy, 0.6), lit = (gx * L[0] + gy * L[1] + 0.6 * L[2]) * inv;
+    const below = clamp((y - top[x]) / (R * 5), 0, 1);
+    const sh = clamp(0.5 + lit * 0.5 - below * 0.5 + (0.5 - y / H) * 0.15, 0, 1);
+    let c = sh < 0.5 ? [0, 1, 2].map(j => lerp(SH[j], MID[j], sh * 2)) : [0, 1, 2].map(j => lerp(MID[j], HI[j], (sh - 0.5) * 2));
+    const edge = 1 - smooth(0.06, 0.32, d);                          // 薄的地方透光：边上一圈淡淡的亮边
+    c = c.map((v, j) => lerp(v, RIM[j], edge * 0.55 * (1 - below)));
+    o[i * 4] = c[0]; o[i * 4 + 1] = c[1]; o[i * 4 + 2] = c[2]; o[i * 4 + 3] = 255 * smooth(0.05, 0.5, d);
   }
   out.getContext('2d').putImageData(img, 0, 0);
 }
+// 11-18 晚：自己算的云像石膏。改成拿全景里真积云的纹理（sky/cloudtex.jpg，三块云里面的切片）填进剪影，
+// 边上按噪声磨成毛边、薄处透一点亮——颜色和光就是天上那些云的。纹理没加载上才退回上面自己算的。
+let CLOUDTEX = null;   // { img, rects: [[x, y, w, h], …] }
+function cloudFromTex(mask, out, R, seed) {
+  const W = out.width, H = out.height, f = clamp(R * 1.1, 4, 24);   // 糊得宽一点：边缘是一大段由浓到淡，不是一条线
+  const sm = mk(W / f, H / f); sm.getContext('2d').drawImage(mask, 0, 0, sm.width, sm.height);
+  const bl = mk(W, H), blg = bl.getContext('2d', { willReadFrequently: true }); blg.imageSmoothingQuality = 'high'; blg.drawImage(sm, 0, 0, W, H);
+  const B = blg.getImageData(0, 0, W, H).data, b = bboxOf(mask) || { u0: 0, v0: 0, u1: 1, v1: 1 };
+  const [tx, ty, tw, th] = CLOUDTEX.rects[seed % CLOUDTEX.rects.length];
+  const bx = b.u0 * W, by = b.v0 * H, bw = (b.u1 - b.u0) * W, bh = (b.v1 - b.v0) * H, k = Math.max(bw / tw, bh / th) * 1.08, dw = tw * k, dh = th * k;
+  const g = out.getContext('2d', { willReadFrequently: true });
+  g.save(); if (seed % 2) { g.translate(W, 0); g.scale(-1, 1); }
+  const cx = seed % 2 ? W - (bx + bw / 2) : bx + bw / 2;
+  g.drawImage(CLOUDTEX.img, tx, ty, tw, th, cx - dw / 2, by + bh / 2 - dh / 2, dw, dh); g.restore();
+  const im = g.getImageData(0, 0, W, H), o = im.data, nA = noise2(seed), nB = noise2(seed + 5), fa = 1 / (R * 2.2), fb = 1 / (R * 0.8);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, m = B[i * 4 + 3] / 255;
+    if (m < 0.02) { o[i * 4 + 3] = 0; continue; }
+    // 边上按两层噪声起伏：大的一团团鼓出去、小的起毛；整体由浓到淡
+    const n = 0.7 * nA(x * fa, y * fa) + 0.3 * nB(x * fb, y * fb), e = m + (n - 0.5) * 0.7;
+    const a = smooth(0.12, 0.62, e) * (0.75 + 0.25 * smooth(0.5, 0.9, e));
+    o[i * 4 + 3] = 255 * a;
+  }
+  g.putImageData(im, 0, 0);
+}
+const toCloud = (mask, out, R, seed) => (CLOUDTEX ? cloudFromTex : cloudify)(mask, out, R, seed);
 // 「我们看见的」：只要云，不要线、不要字
 function readingCloud(rd, seed) {
   const W = 640, H = Math.round(W / rd.aspect), c = mk(W, H), g = c.getContext('2d');
@@ -85,7 +134,7 @@ function readingCloud(rd, seed) {
   const b = bboxOf(c) || { u0: 0, v0: 0, u1: 1, v1: 1 };
   const sw = (b.u1 - b.u0) * W, sh = (b.v1 - b.v0) * H, CW = 512, R = CW * 0.036, pad = Math.ceil(R * 2.6), scale = (CW - 2 * pad) / Math.max(sw, sh);
   const dw = sw * scale, dh = sh * scale, out = mk(CW, dh + 2 * pad);
-  cloudify(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, out.width, out.height, (CW - dw) / 2, pad, dw, dh, R * 0.3), out, R, seed);
+  toCloud(fillInside(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, out.width, out.height, (CW - dw) / 2, pad, dw, dh, R * 0.35)), out, R, seed);
   return out;
 }
 
@@ -105,7 +154,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const bigP = big.decode().then(() => { bigReady = true; }).catch(() => {});
   try {
     pano = new Image(); pano.src = PANO_SMALL;
-    [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {})]);
+    const texImg = new Image(); texImg.src = 'sky/cloudtex.jpg';
+    const texP = Promise.all([texImg.decode(), fetch('sky/cloudtex.json').then(r => r.json())]).then(([, rects]) => { CLOUDTEX = { img: texImg, rects }; }).catch(() => { CLOUDTEX = null; });
+    [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
     await Promise.race([bigP, new Promise(r => setTimeout(r, 5000))]);   // 清楚的那张最多等 5 秒
     if (bigReady) pano = big;
   } catch (_) { el.hidden = true; document.documentElement.style.overflow = prevOverflow; return null; }
@@ -120,7 +171,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   // 逐笔重画时是你自己的线（带一圈淡淡的白光，粉天上看得清）；画完鼓成一朵云
   const mineDraw = (src) => { const mg = mine.getContext('2d'); mg.clearRect(0, 0, mine.width, mine.height); mg.save(); mg.shadowColor = 'rgba(255,255,255,0.9)'; mg.shadowBlur = 10; mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); mg.restore(); mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); };
   const mineCloud = mk(mine.width, mine.height);
-  cloudify(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.3), mineCloud, R, 7);
+  toCloud(fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.35)), mineCloud, R, 7);
   const ops = board.strokes, ink = mk(AW, AH), fill = mk(AW, AH), live = mk(AW, AH), tmp = mk(AW, AH);
   const lenOf = s => { if (!s.p || s.p.length < 2 || s.t === 'fill' || s.t === 'shape') return 0; let L = 0; for (let i = 1; i < s.p.length; i++) L += Math.hypot((s.p[i][0] - s.p[i - 1][0]) * AW, (s.p[i][1] - s.p[i - 1][1]) * AH); return L; };
   const unit = ops.map(s => Math.max(lenOf(s), 40)), total = unit.reduce((a, b) => a + b, 0) || 1;
@@ -302,3 +353,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   play();
   return { close, duration: TEND, cards: cards.length, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
+
+// 调云的样子时在页面里直接画几朵看（不进场景）
+export { readingCloud, cloudify, maskOf, fillInside };
+export const setCloudTex = t => { CLOUDTEX = t; };
