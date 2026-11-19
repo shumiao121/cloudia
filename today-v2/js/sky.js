@@ -7,6 +7,7 @@
 // 只用浏览器自带的 WebGL，不引库、不从别的网站加载。只动不亮（发光留给 app）。
 import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
+import { makePuffBaker } from './puff.js?v=27';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
 
 const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺满整个窗口、跟着窗口变；画面按屏幕像素（长边最多 2560），录像按窗口比例、长边 1280
 // 11-19 他说天还是糊：World Labs 的全景真实细节只有约 2300 宽，放大补不出来。换成 Poly Haven 实拍的纯天空日落（CC0），
@@ -167,13 +168,17 @@ function cloudFromTex(mask, out, R, seed) {
 }
 const toCloud = (mask, out, R, seed) => (CLOUDTEX ? cloudFromTex : cloudify)(mask, out, R, seed);
 // 「我们看见的」：只要云，不要线、不要字
-function readingCloud(rd, seed) {
+function readingMask(rd) {   // 填好里面的遮罩（捏云和贴纹理两种都从它出发）
   const W = 640, H = Math.round(W / rd.aspect), c = mk(W, H), g = c.getContext('2d');
   for (const p of rd.strokes) drawStroke(g, { t: 'ink', c: '#000', w: 0.006, p }, W, H);
   const b = bboxOf(c) || { u0: 0, v0: 0, u1: 1, v1: 1 };
   const sw = (b.u1 - b.u0) * W, sh = (b.v1 - b.v0) * H, CW = 512, R = CW * 0.036, pad = Math.ceil(R * 2.6), scale = (CW - 2 * pad) / Math.max(sw, sh);
-  const dw = sw * scale, dh = sh * scale, out = mk(CW, dh + 2 * pad);
-  toCloud(fillInside(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, out.width, out.height, (CW - dw) / 2, pad, dw, dh, R * 0.5)), out, R, seed);
+  const dw = sw * scale, dh = sh * scale;
+  return { mask: fillInside(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, CW, Math.round(dh + 2 * pad), (CW - dw) / 2, pad, dw, dh, R * 0.5)), R };
+}
+function readingCloud(rd, seed) {
+  const { mask, R } = readingMask(rd), out = mk(mask.width, mask.height);
+  toCloud(mask, out, R, seed);
   return out;
 }
 
@@ -181,6 +186,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const glc = mk(2, 2);
   const gl = glc.getContext('webgl', { antialias: true, alpha: false, premultipliedAlpha: true, preserveDrawingBuffer: true });
   if (!gl) return null;
+  const bake = makePuffBaker(gl);   // 显卡不够（或着色器编不过）就退回贴纹理的那一版
   const el = overlay(storeHref), cv = el.querySelector('canvas'), g = cv.getContext('2d');
   el.classList.add('full');
   let FW, FH, RW = 1280, RH = 720, SC = 1, proj, tanX, tanY;
@@ -210,7 +216,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   try {
     pano = new Image(); pano.src = PANO_SMALL;
     const texImg = new Image(); texImg.src = SKY_DIR + 'cloudtex.jpg';
-    const texP = Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
+    const texP = bake ? Promise.resolve() : Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
     [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
     startBig();
     let got = 0; bigP.then(v => { got = Math.max(got, v); }); hdP.then(v => { got = Math.max(got, v); });
@@ -228,8 +234,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const ox = (mineW - sw * kk) / 2, dw = sw * kk, dh = sh * kk;
   // 逐笔重画时是你自己的线（带一圈淡淡的白光，粉天上看得清）；画完鼓成一朵云
   const mineDraw = (src) => { const mg = mine.getContext('2d'); mg.clearRect(0, 0, mine.width, mine.height); mg.save(); mg.shadowColor = 'rgba(255,255,255,0.9)'; mg.shadowBlur = 10; mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); mg.restore(); mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); };
-  const mineCloud = mk(mine.width, mine.height);
-  toCloud(fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.5)), mineCloud, R, 7);
+  const mineMask = fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.5));
+  let mineCloud = null;
+  if (!bake) { mineCloud = mk(mine.width, mine.height); toCloud(mineMask, mineCloud, R, 7); }
   const ops = board.strokes, ink = mk(AW, AH), fill = mk(AW, AH), live = mk(AW, AH), tmp = mk(AW, AH);
   const lenOf = s => { if (!s.p || s.p.length < 2 || s.t === 'fill' || s.t === 'shape') return 0; let L = 0; for (let i = 1; i < s.p.length; i++) L += Math.hypot((s.p[i][0] - s.p[i - 1][0]) * AW, (s.p[i][1] - s.p[i - 1][1]) * AH); return L; };
   const unit = ops.map(s => Math.max(lenOf(s), 40)), total = unit.reduce((a, b) => a + b, 0) || 1;
@@ -259,9 +266,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   // 18 幅均匀绕一圈（正前方左右各留 34° 给你的画），一高一低、一近一远交替，挨着的两幅不会叠在一起
   const pick = readings.slice(0, 18), N = pick.length, DIST = [6.5, 9.5, 7.5, 11];
   pick.forEach((rd, i) => {
-    const a = 0.6 + (i + 0.5) / N * (Math.PI * 2 - 1.2), d = DIST[i % 4] + r() * 0.8, c = readingCloud(rd, 100 + i), asp = c.width / c.height;
+    const a = 0.6 + (i + 0.5) / N * (Math.PI * 2 - 1.2), d = DIST[i % 4] + r() * 0.8, c = bake ? readingMask(rd).mask : readingCloud(rd, 100 + i), asp = c.width / c.height;
     const w = (2.3 + r() * 0.5) * (0.8 + d / 14), h = w / asp, y = i % 2 ? 3.5 + r() * 0.8 : 1.6 + r() * 0.4;
-    cards.push({ canvas: c, x: Math.sin(a) * d, z: -Math.cos(a) * d, y: Math.max(h / 2 + 0.3, y), w, h, ph: r() * 6.28 });
+    cards.push({ canvas: c, puff: !!bake, seed: 100 + i, x: Math.sin(a) * d, z: -Math.cos(a) * d, y: Math.max(h / 2 + 0.3, y), w, h, ph: r() * 6.28 });
   });
 
   // ---------- WebGL ----------
@@ -286,7 +293,15 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   };
   bigP.then(upgrade); hdP.then(upgrade);
   drawOn(at != null ? at : 0);
-  for (const c of cards) { c.tex = texOf(c.canvas, false); if (c.cloud) c.cloudTex = texOf(c.cloud, false); }
+  // 捏云：每朵开场前画一次（正面），之后当贴图用。画不出来的那朵退回贴纹理
+  const tB = performance.now();
+  for (const c of cards) {
+    if (c.mine) { c.tex = texOf(c.canvas, false); const b = bake && bake(mineMask, 150, 7);
+      if (b) c.cloudTex = b.tex; else { if (!mineCloud) { mineCloud = mk(mine.width, mine.height); CLOUDTEX = null; toCloud(mineMask, mineCloud, R, 7); } c.cloudTex = texOf(mineCloud, false); } continue; }
+    const b = c.puff && bake(c.canvas, 80, c.seed);
+    if (b) c.tex = b.tex; else { if (c.puff) { const out = mk(c.canvas.width, c.canvas.height); toCloud(c.canvas, out, out.width * 0.036, c.seed); c.canvas = out; } c.tex = texOf(c.canvas, false); }
+  }
+  gl.finish(); const bakeMs = Math.round(performance.now() - tB);
   const cardBuf = gl.createBuffer(), verts = new Float32Array(30);
 
   // ---------- 镜头 ----------
@@ -419,7 +434,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   addEventListener('keydown', esc);
   el.querySelector('.inside-x').onclick = close;
   play();
-  return { close, duration: TEND, cards: cards.length, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
+  return { close, duration: TEND, cards: cards.length, bakeMs, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
 
 // 调云的样子时在页面里直接画几朵看（不进场景）
