@@ -9,7 +9,8 @@ import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
 
 const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺满整个窗口、跟着窗口变；画面按屏幕像素（长边最多 2560），录像按窗口比例、长边 1280
-const PANO = 'sky/pink.jpg', PANO_SMALL = 'sky/pink-1k.jpg', PANO_TURN = 0.145;   // 大图（4608 宽）最多等 5 秒，等不到先用小图、到了再换；正前方对着那朵最高的粉云
+const PANO = 'sky/pink.jpg', PANO_SMALL = 'sky/pink-1k.jpg', PANO_HD = ['sky/pink-hd-0.jpg', 'sky/pink-hd-1.jpg'], PANO_TURN = 0.145;
+// 三档：小图（1k）先进场 → 4608 → AI 放大的 9216（左右两半）；最多等 6 秒，等到哪档用哪档，之后到了再换上。正前方对着那朵最高的粉云
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ease = t => (t = clamp(t, 0, 1), t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -18,10 +19,11 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Mat
 function rng(seed) { let s = seed % 2147483646 + 1; return () => (s = s * 16807 % 2147483647) / 2147483647; }
 
 const SKY_VS = `attribute vec2 aP; varying vec2 vP; void main(){ vP = aP; gl_Position = vec4(aP, 0.9999, 1.0); }`;
-const SKY_FS = `precision highp float; varying vec2 vP; uniform vec3 uR, uU, uF; uniform vec2 uTan; uniform sampler2D uT; uniform float uTurn;
+const SKY_FS = `precision highp float; varying vec2 vP; uniform vec3 uR, uU, uF; uniform vec2 uTan; uniform sampler2D uT, uT2; uniform float uTurn, uSplit;
 void main(){ vec3 d = normalize(uF + uR * vP.x * uTan.x + uU * vP.y * uTan.y);
   float u = fract(0.5 + atan(d.x, -d.z) / 6.2831853 + uTurn); float v = acos(clamp(d.y, -1.0, 1.0)) / 3.14159265;
-  gl_FragColor = vec4(texture2D(uT, vec2(u, v)).rgb, 1.0); }`;
+  vec3 c = uSplit < 0.5 ? texture2D(uT, vec2(u, v)).rgb : (u < 0.5 ? texture2D(uT, vec2(u * 2.0, v)).rgb : texture2D(uT2, vec2(u * 2.0 - 1.0, v)).rgb);
+  gl_FragColor = vec4(c, 1.0); }`;
 const CARD_VS = `attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uVP; varying vec2 vUV; void main(){ vUV = aUV; gl_Position = uVP * vec4(aPos, 1.0); }`;
 const CARD_FS = `precision mediump float; varying vec2 vUV; uniform sampler2D uT; uniform float uA, uRefl, uTime;
 void main(){ vec2 uv = vUV;
@@ -172,16 +174,19 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const prevOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden';
   g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, FW, FH);
   g.fillStyle = '#5D6771'; g.font = `${28 * SC}px -apple-system, system-ui, sans-serif`; g.textAlign = 'center'; g.fillText('Opening the sky…', FW / 2, FH / 2);
-  let pano, readings, bigReady = false;
+  let pano, readings, level = 0;   // 0 小图 / 1 4608 / 2 两半高清
   const big = new Image(); big.src = PANO;
-  const bigP = big.decode().then(() => { bigReady = true; }).catch(() => {});
+  const hd = PANO_HD.map(u => { const im = new Image(); im.src = u; return im; });
+  const bigP = big.decode().then(() => 1).catch(() => 0), hdP = Promise.all(hd.map(im => im.decode())).then(() => 2).catch(() => 0);
   try {
     pano = new Image(); pano.src = PANO_SMALL;
     const texImg = new Image(); texImg.src = 'sky/cloudtex.jpg';
     const texP = Promise.all([texImg.decode(), fetch('sky/cloudtex.json').then(r => r.json())]).then(([, rects]) => { CLOUDTEX = { img: texImg, rects }; }).catch(() => { CLOUDTEX = null; });
     [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
-    await Promise.race([bigP, new Promise(r => setTimeout(r, 5000))]);   // 清楚的那张最多等 5 秒
-    if (bigReady) pano = big;
+    let got = 0; bigP.then(v => { got = Math.max(got, v); }); hdP.then(v => { got = Math.max(got, v); });
+    await Promise.race([hdP, new Promise(r => setTimeout(r, 6000))]);   // 高清的最多等 6 秒
+    await new Promise(r => setTimeout(r, 0));
+    level = got; if (level === 1) pano = big;
   } catch (_) { el.hidden = true; el.classList.remove('full'); removeEventListener('resize', onResize); document.documentElement.style.overflow = prevOverflow; return null; }
 
   // ---------- 你的画：先出整张（定位用），逐笔重画时往卡片上一帧帧补 ----------
@@ -239,8 +244,17 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, wrap], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     return t;
   };
-  const panoTex = texOf(pano, false);   // 4608×2304 不是 2 的幂：不用 mipmap、边上夹住；接缝在 fract 处，两头颜色本来就接得上
-  if (!bigReady) bigP.then(() => { if (closed || !bigReady) return; gl.bindTexture(gl.TEXTURE_2D, panoTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, big); });
+  // 不是 2 的幂：不用 mipmap、边上夹住；接缝在 fract 处，两头颜色本来就接得上。显卡认不了 4608 宽的就停在小图
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const canHD = maxTex >= 4608;
+  if (!canHD) level = 0;
+  const panoTex = texOf(level === 2 ? hd[0] : (level === 1 ? big : pano), false), panoTex2 = texOf(level === 2 ? hd[1] : pano, false);
+  const upgrade = (lv) => {
+    if (closed || !canHD || lv <= level) return;
+    level = lv; gl.bindTexture(gl.TEXTURE_2D, panoTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, lv === 2 ? hd[0] : big);
+    if (lv === 2) { gl.bindTexture(gl.TEXTURE_2D, panoTex2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hd[1]); }
+  };
+  bigP.then(upgrade); hdP.then(upgrade);
   drawOn(at != null ? at : 0);
   for (const c of cards) { c.tex = texOf(c.canvas, false); if (c.cloud) c.cloudTex = texOf(c.cloud, false); }
   const cardBuf = gl.createBuffer(), verts = new Float32Array(30);
@@ -260,7 +274,8 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     gl.viewport(0, 0, FW, FH); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
     gl.useProgram(skyP.p);
     gl.uniform3fv(skyP.loc.uR, L.r); gl.uniform3fv(skyP.loc.uU, L.u); gl.uniform3fv(skyP.loc.uF, L.f); gl.uniform2f(skyP.loc.uTan, tanX, tanY); gl.uniform1f(skyP.loc.uTurn, PANO_TURN);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, panoTex); gl.uniform1i(skyP.loc.uT, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, panoTex2); gl.uniform1i(skyP.loc.uT2, 1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, panoTex); gl.uniform1i(skyP.loc.uT, 0); gl.uniform1f(skyP.loc.uSplit, level === 2 ? 1 : 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(skyP.loc.aP); gl.vertexAttribPointer(skyP.loc.aP, 2, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3); gl.disableVertexAttribArray(skyP.loc.aP);
     // 卡片：一律正对镜头（只绕竖轴转，始终立着）；远的先画；先画全部倒影再画卡片
