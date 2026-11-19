@@ -16,7 +16,7 @@ const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺�
 // turn：转多少让正前方对着好看的云；tint：水里倒影的那层颜色
 const SKIES = {
   klop: { turn: 0.0, tint: [0.80, 0.85, 0.92], sun: [0.645, 0.03, -0.764] },   // sun：照片里太阳的方向（klop 在 u≈0.61）
-  belfast: { turn: 0.08, tint: [0.84, 0.80, 0.86], sun: [0.426, 0.03, -0.905] },
+  // belfast（粉紫那版）11-19 他选了 klop，素材不上正式；要再比就把这行和 sky/belfast/ 加回来
 };
 const SKY_NAME = (() => { try { const q = new URLSearchParams(location.search).get('sky'); return SKIES[q] ? q : 'klop'; } catch (_) { return 'klop'; } })();
 const SKY_DIR = `sky/${SKY_NAME}/`, PANO_SMALL = SKY_DIR + 's.jpg', PANO = SKY_DIR + 'm.jpg', PANO_HD = [SKY_DIR + 'h0.jpg', SKY_DIR + 'h1.jpg'], PANO_TURN = SKIES[SKY_NAME].turn;

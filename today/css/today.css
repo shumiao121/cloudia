@@ -220,3 +220,24 @@ footer a { color: inherit; }
 figure.board { background-size: cover; background-position: center; }
 figure.board img { transition: opacity .35s ease; }
 figure.board.loading img { opacity: 0; }
+
+/* ---------- 走进云里（11-18） ---------- */
+.step { margin: 6px 0 26px; display: grid; justify-items: start; gap: 6px; }
+.step-btn { font-size: 17px; padding: 13px 22px; border-radius: 999px; }
+.inside { position: fixed; inset: 0; z-index: 60; background: rgba(14, 18, 24, .94); display: grid; place-items: center; touch-action: none; }
+.inside canvas { display: block; height: min(100dvh, 100vw * 16 / 9); width: auto; max-width: 100vw; aspect-ratio: 9 / 16; }
+@media (min-width: 600px) { .inside canvas { height: calc(100dvh - 40px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); } }
+.inside-x { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  border: 0; background: rgba(20, 24, 30, .55); color: #fff; font-size: 26px; line-height: 44px; }
+.inside-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); display: flex; gap: 10px; align-items: center;
+  flex-wrap: nowrap; justify-content: center; width: max-content; max-width: calc(100vw - 24px); padding: 8px; border-radius: 999px; background: rgba(250, 249, 245, .92); box-shadow: 0 8px 28px rgba(0, 0, 0, .25); }
+.inside-bar button { border-radius: 999px; white-space: nowrap; }
+@media (max-width: 420px) { .inside-bar button { padding: 10px 14px; font-size: 15px; } .inside-app { padding: 0 6px; font-size: 15px; } }
+.inside-bar .primary { background: #1A1B24; color: #F7F4EC; border-color: #1A1B24; }
+.inside-bar button:not(.primary) { background: #fff; color: #1A1B24; border-color: #D9D4C7; }
+.inside-app { color: #945D16; font-weight: 600; padding: 0 10px; white-space: nowrap; }
+.inside-hint { position: absolute; top: max(18px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); margin: 0; padding: 7px 14px; border-radius: 999px;
+  background: rgba(20, 24, 30, .55); color: #fff; font-size: 14px; white-space: nowrap; pointer-events: none; }
+.inside canvas { touch-action: none; cursor: grab; }
+/* 天空之镜：铺满整个窗口，跟着窗口变（电脑上用） */
+.inside.full canvas { width: 100vw; height: 100dvh; max-width: none; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
