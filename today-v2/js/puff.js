@@ -53,10 +53,13 @@ void main(){
   float fresnel = pow(1.0 - NdotV, 2.4), mie = pow(max(0.0, dot(-v, l)), 2.6);
   col += uRim * (fresnel * 0.35 + mie * fresnel * 0.65);
   // 边：比 app 再虚一点（app 里「轻」那种料的做法），再按絮把最外一圈咬成一缕缕的——贴在照片天上，硬边最显眼
-  float alpha = smoothstep(0.10, 0.95, clamp(pow(NdotV, 0.3) * 1.12, 0.0, 1.0));
+  // 11-20 他说「云太实了，要虚一些」：边从里往外淡得更早、更宽（不是一道硬沿），身子也不是满的——
+  // 按一层大絮有浓有淡（0.62…0.95），像真云那样薄的地方透一点天
+  float alpha = smoothstep(0.0, 1.0, clamp(pow(NdotV, 0.75) * 1.05, 0.0, 1.0));
+  alpha *= 0.62 + 0.33 * smoothstep(0.25, 0.7, billow(p * 0.9 + 11.0));
   // 边散开：外面一大圈按两层絮咬成一缕缕、一点点的（越靠边越散）
   float fr = billow(p * 3.3) * 0.6 + billow(p * 8.0 + 3.0) * 0.4;
-  alpha *= mix(clamp(fr * 2.4 - 0.3, 0.0, 1.0), 1.0, smoothstep(0.08, 0.42, NdotV));
+  alpha *= mix(clamp(fr * 2.4 - 0.4, 0.0, 1.0), 1.0, smoothstep(0.1, 0.6, NdotV));
   gl_FragColor = vec4(pow(filmic(max(col, 0.0)), vec3(1.0 / 2.2)), alpha);
 }`;
 

@@ -7,7 +7,7 @@
 // 只用浏览器自带的 WebGL，不引库、不从别的网站加载。只动不亮（发光留给 app）。
 import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
-import { makePuffBaker } from './puff.js?v=33';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
+import { makePuffBaker } from './puff.js?v=34';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
 
 const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺满整个窗口、跟着窗口变；画面按屏幕像素（长边最多 2560），录像按窗口比例、长边 1280
 // 11-19 他说天还是糊：World Labs 的全景真实细节只有约 2300 宽，放大补不出来。换成 Poly Haven 实拍的纯天空日落（CC0），
@@ -62,7 +62,7 @@ void main(){ vec2 uv = vUV;
     float back = smoothstep(0.78, 0.98, dot(normalize(d.xz), normalize(uSun.xz)));   // 只有正挡着太阳的那几朵
     c.rgb = mix(c.rgb, c.rgb * vec3(0.6, 0.62, 0.7), back * (1.0 - edge));
     c.rgb += vec3(1.0, 0.84, 0.58) * back * edge * 1.1;
-    c.rgb = mix(c.rgb, bg, clamp(1.0 - exp(-dist * 0.02), 0.0, 0.18) + edge * 0.18 * (1.0 - back));   // 雾轻一点：照片里同样远的真云顶上是奶白的
+    c.rgb = mix(c.rgb, bg, clamp(1.0 - exp(-dist * 0.02), 0.0, 0.18) + edge * 0.3 * (1.0 - back));   // 雾轻一点：照片里同样远的真云顶上是奶白的
   } else if (uCloud > 0.25 && uCloud < 0.75) {   // 云上的线：颜色照原样，只跟云一起蒙远处的雾
     vec3 rel = vW - uEye; float dist = length(rel);
     c.rgb = mix(c.rgb, sky(rel / dist), clamp(1.0 - exp(-dist * 0.035), 0.0, 0.35));
