@@ -129,7 +129,7 @@ function cloudFromTex(mask, out, R, seed) {
   // 软边：缩到四分之一，在小图上横竖各模糊两遍（近似高斯），再放大回来——边上由浓到淡、没有台阶
   const W = out.width, H = out.height, q = 4, sw4 = Math.ceil(W / q), sh4 = Math.ceil(H / q);
   const sm = mk(sw4, sh4), smg = sm.getContext('2d', { willReadFrequently: true }); smg.drawImage(mask, 0, 0, sw4, sh4);
-  const sd = smg.getImageData(0, 0, sw4, sh4), A = new Float32Array(sw4 * sh4), T = new Float32Array(sw4 * sh4), rb = Math.max(1, Math.round(R * 0.9 / q));
+  const sd = smg.getImageData(0, 0, sw4, sh4), A = new Float32Array(sw4 * sh4), T = new Float32Array(sw4 * sh4), rb = Math.max(1, Math.round(R * 0.45 / q));   // 11-19 他要形状清楚：模糊减半，细线（尾巴、触角）不再被抹掉
   for (let i = 0; i < A.length; i++) A[i] = sd.data[i * 4 + 3];
   for (let pass = 0; pass < 2; pass++) {
     for (let y = 0; y < sh4; y++) { let acc = 0; for (let x = -rb; x <= rb; x++) acc += A[y * sw4 + clamp(x, 0, sw4 - 1)];
@@ -147,14 +147,20 @@ function cloudFromTex(mask, out, R, seed) {
   g.save(); if (seed % 2) { g.translate(W, 0); g.scale(-1, 1); }
   const cx = seed % 2 ? W - (bx + bw / 2) : bx + bw / 2;
   g.drawImage(CLOUDTEX.img, tx, ty, tw, th, cx - dw / 2, by + bh / 2 - dh / 2, dw, dh); g.restore();
-  const key = CLOUDTEX.key, im = g.getImageData(0, 0, W, H), o = im.data, nA = noise2(seed), nB = noise2(seed + 5), fa = 1 / (R * 2.2), fb = 1 / (R * 0.8);
+  const key = CLOUDTEX.key, im = g.getImageData(0, 0, W, H), o = im.data, nA = noise2(seed), nB = noise2(seed + 5), fa = 1 / (R * 1.1), fb = 1 / (R * 0.5);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, m = B[i * 4 + 3] / 255;
     if (m < 0.02) { o[i * 4 + 3] = 0; continue; }
     // 边上按两层噪声起伏：大的一团团鼓出去、小的起毛；整体由浓到淡
-    const n = 0.7 * nA(x * fa, y * fa) + 0.3 * nB(x * fb, y * fb), e = m + (n - 0.5) * 0.7;
-    let a = smooth(0.12, 0.62, e) * (0.75 + 0.25 * smooth(0.5, 0.9, e));
-    if (key) { const r = o[i * 4], gg = o[i * 4 + 1], bb = o[i * 4 + 2], w = Math.min(r, gg, bb) / Math.max(1, r, gg, bb); a *= 0.3 + 0.7 * smooth(key[0], key[1], w); }
+    // 11-19：边上的起伏从 ±0.35 收到 ±0.17——还是毛边，但不再把轮廓啃掉；里面的蓝天缝只透一点（0.62），整团读得出形状
+    const n = 0.7 * nA(x * fa, y * fa) + 0.3 * nB(x * fb, y * fb), e = m + (n - 0.5) * 0.28;
+    let a = smooth(0.15, 0.6, e) * (0.8 + 0.2 * smooth(0.5, 0.85, e));
+    // 蓝天缝：不再透出蓝（像磨砂玻璃窗），而是填成一层薄雾白、稍透一点——整团是一朵云，里面的云纹还在
+    if (key) { const r = o[i * 4], gg = o[i * 4 + 1], bb = o[i * 4 + 2], w = Math.min(r, gg, bb) / Math.max(1, r, gg, bb), kc = smooth(key[0], key[1], w), f = (1 - kc) * 0.7;
+      o[i * 4] = lerp(r, 232, f); o[i * 4 + 1] = lerp(gg, 234, f); o[i * 4 + 2] = lerp(bb, 238, f); a *= 0.8 + 0.2 * kc; }
+    // 亮边：真云薄的边缘透光、比里面亮——沿着轮廓一圈暖白，形状一眼就出来
+    const rim = smooth(0.15, 0.42, e) * (1 - smooth(0.42, 0.8, e)) * (0.6 + 0.8 * n);   // 亮边跟着噪声时强时弱，不是一圈均匀的描边
+    if (rim > 0) { const k = Math.min(1, rim) * 0.34; o[i * 4] = lerp(o[i * 4], 255, k); o[i * 4 + 1] = lerp(o[i * 4 + 1], 247, k); o[i * 4 + 2] = lerp(o[i * 4 + 2], 236, k); a = Math.max(a, Math.min(1, rim) * 0.7); }
     o[i * 4 + 3] = 255 * a;
   }
   g.putImageData(im, 0, 0);
@@ -167,7 +173,7 @@ function readingCloud(rd, seed) {
   const b = bboxOf(c) || { u0: 0, v0: 0, u1: 1, v1: 1 };
   const sw = (b.u1 - b.u0) * W, sh = (b.v1 - b.v0) * H, CW = 512, R = CW * 0.036, pad = Math.ceil(R * 2.6), scale = (CW - 2 * pad) / Math.max(sw, sh);
   const dw = sw * scale, dh = sh * scale, out = mk(CW, dh + 2 * pad);
-  toCloud(fillInside(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, out.width, out.height, (CW - dw) / 2, pad, dw, dh, R * 0.35)), out, R, seed);
+  toCloud(fillInside(maskOf(c, b.u0 * W, b.v0 * H, sw, sh, out.width, out.height, (CW - dw) / 2, pad, dw, dh, R * 0.5)), out, R, seed);
   return out;
 }
 
@@ -219,7 +225,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   // 逐笔重画时是你自己的线（带一圈淡淡的白光，粉天上看得清）；画完鼓成一朵云
   const mineDraw = (src) => { const mg = mine.getContext('2d'); mg.clearRect(0, 0, mine.width, mine.height); mg.save(); mg.shadowColor = 'rgba(255,255,255,0.9)'; mg.shadowBlur = 10; mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); mg.restore(); mg.drawImage(src, sx, sy, sw, sh, ox, pad, dw, dh); };
   const mineCloud = mk(mine.width, mine.height);
-  toCloud(fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.35)), mineCloud, R, 7);
+  toCloud(fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.5)), mineCloud, R, 7);
   const ops = board.strokes, ink = mk(AW, AH), fill = mk(AW, AH), live = mk(AW, AH), tmp = mk(AW, AH);
   const lenOf = s => { if (!s.p || s.p.length < 2 || s.t === 'fill' || s.t === 'shape') return 0; let L = 0; for (let i = 1; i < s.p.length; i++) L += Math.hypot((s.p[i][0] - s.p[i - 1][0]) * AW, (s.p[i][1] - s.p[i - 1][1]) * AH); return L; };
   const unit = ops.map(s => Math.max(lenOf(s), 40)), total = unit.reduce((a, b) => a + b, 0) || 1;
