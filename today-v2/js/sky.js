@@ -201,16 +201,20 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, FW, FH);
   g.fillStyle = '#5D6771'; g.font = `${28 * SC}px -apple-system, system-ui, sans-serif`; g.textAlign = 'center'; g.fillText('Opening the sky…', FW / 2, FH / 2);
   let pano, readings, level = 0;   // 0 小图 / 1 4096 / 2 两半合 8192
-  const big = new Image(); big.src = PANO;
-  const hd = PANO_HD.map(u => { const im = new Image(); im.src = u; return im; });
-  const bigP = big.decode().then(() => 1).catch(() => 0), hdP = Promise.all(hd.map(im => im.decode())).then(() => 2).catch(() => 0);
+  // 11-19 线上实测：大图和小图一起下会抢带宽，慢网下点进去要 11 秒。改成排队：先下进场要的（小图、云纹理、18 幅），
+  // 进场后再下 4096、它到了再下两半高清
+  const big = new Image(), hd = PANO_HD.map(() => new Image());
+  let startBig; const bigGo = new Promise(r => { startBig = r; });
+  const bigP = bigGo.then(() => { big.src = PANO; return big.decode(); }).then(() => 1).catch(() => 0);
+  const hdP = bigP.then(() => { hd.forEach((im, k) => { im.src = PANO_HD[k]; }); return Promise.all(hd.map(im => im.decode())); }).then(() => 2).catch(() => 0);
   try {
     pano = new Image(); pano.src = PANO_SMALL;
     const texImg = new Image(); texImg.src = SKY_DIR + 'cloudtex.jpg';
     const texP = Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
     [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
+    startBig();
     let got = 0; bigP.then(v => { got = Math.max(got, v); }); hdP.then(v => { got = Math.max(got, v); });
-    await Promise.race([hdP, new Promise(r => setTimeout(r, 6000))]);   // 高清的最多等 6 秒
+    await Promise.race([hdP, new Promise(r => setTimeout(r, 2500))]);   // 高清的最多再等 2.5 秒（快网这点时间够下完），没到就先进、到了再换
     await new Promise(r => setTimeout(r, 0));
     level = got; if (level === 1) pano = big;
   } catch (_) { el.hidden = true; el.classList.remove('full'); removeEventListener('resize', onResize); document.documentElement.style.overflow = prevOverflow; return null; }
