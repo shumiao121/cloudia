@@ -239,3 +239,5 @@ figure.board.loading img { opacity: 0; }
 .inside-hint { position: absolute; top: max(18px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); margin: 0; padding: 7px 14px; border-radius: 999px;
   background: rgba(20, 24, 30, .55); color: #fff; font-size: 14px; white-space: nowrap; pointer-events: none; }
 .inside canvas { touch-action: none; cursor: grab; }
+/* 天空之镜：铺满整个窗口，跟着窗口变（电脑上用） */
+.inside.full canvas { width: 100vw; height: 100dvh; max-width: none; aspect-ratio: auto; border-radius: 0; box-shadow: none; }

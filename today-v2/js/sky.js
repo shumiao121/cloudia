@@ -8,7 +8,7 @@
 import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
 
-const FW = 1080, FH = 1920, RW = 720, RH = 1280, SC = FW / 720, FOVY = 70 * Math.PI / 180, EYE = 1.6;   // 画面 1080×1920（手机上不糊），录像 720×1280
+const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺满整个窗口、跟着窗口变；画面按屏幕像素（长边最多 2560），录像按窗口比例、长边 1280
 const PANO = 'sky/pink.jpg', PANO_SMALL = 'sky/pink-1k.jpg', PANO_TURN = 0.145;   // 大图（4608 宽）最多等 5 秒，等不到先用小图、到了再换；正前方对着那朵最高的粉云
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -150,11 +150,23 @@ function readingCloud(rd, seed) {
 }
 
 export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null }) {
-  const glc = mk(FW, FH);
+  const glc = mk(2, 2);
   const gl = glc.getContext('webgl', { antialias: true, alpha: false, premultipliedAlpha: true, preserveDrawingBuffer: true });
   if (!gl) return null;
-  const el = overlay(storeHref), cv = el.querySelector('canvas'); cv.width = FW; cv.height = FH; const g = cv.getContext('2d');
-  const rc = mk(RW, RH), rcg = rc.getContext('2d');   // 录像用的小一号画布
+  const el = overlay(storeHref), cv = el.querySelector('canvas'), g = cv.getContext('2d');
+  el.classList.add('full');
+  let FW, FH, RW = 1280, RH = 720, SC = 1, proj, tanX, tanY;
+  const fit = () => {   // 按窗口定画布大小和视角：横屏竖着看 55°，竖屏横着看 64°
+    const dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth * dpr, h = innerHeight * dpr, k = Math.min(1, MAXPX / Math.max(w, h));
+    FW = Math.max(2, Math.round(w * k)); FH = Math.max(2, Math.round(h * k)); SC = Math.min(FW, FH) / 720;
+    const fovy = FW >= FH ? 55 * Math.PI / 180 : 2 * Math.atan(Math.tan(32 * Math.PI / 180) / (FW / FH));
+    tanY = Math.tan(fovy / 2); tanX = tanY * FW / FH; proj = perspective(fovy, FW / FH, 0.05, 200);
+    glc.width = FW; glc.height = FH; cv.width = FW; cv.height = FH;
+  };
+  fit();
+  const onResize = () => { fit(); if (at != null) frame(performance.now()); };
+  addEventListener('resize', onResize);
+  const rc = mk(RW, RH), rcg = rc.getContext('2d');   // 录像用的小一号画布（每次开录按当时窗口比例定尺寸）
   const bar = el.querySelector('.inside-bar'), shareBtn = bar.querySelector('[data-act=share]'), hint = el.querySelector('.inside-hint');
   el.hidden = false; bar.hidden = true; hint.hidden = true;
   const prevOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden';
@@ -170,7 +182,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
     await Promise.race([bigP, new Promise(r => setTimeout(r, 5000))]);   // 清楚的那张最多等 5 秒
     if (bigReady) pano = big;
-  } catch (_) { el.hidden = true; document.documentElement.style.overflow = prevOverflow; return null; }
+  } catch (_) { el.hidden = true; el.classList.remove('full'); removeEventListener('resize', onResize); document.documentElement.style.overflow = prevOverflow; return null; }
 
   // ---------- 你的画：先出整张（定位用），逐笔重画时往卡片上一帧帧补 ----------
   const A = photo.naturalWidth / photo.naturalHeight, AW = 1024, AH = Math.round(AW / A);
@@ -232,7 +244,6 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   drawOn(at != null ? at : 0);
   for (const c of cards) { c.tex = texOf(c.canvas, false); if (c.cloud) c.cloudTex = texOf(c.cloud, false); }
   const cardBuf = gl.createBuffer(), verts = new Float32Array(30);
-  const proj = perspective(FOVY, FW / FH, 0.05, 200), tanY = Math.tan(FOVY / 2), tanX = tanY * FW / FH;
 
   // ---------- 镜头 ----------
   const cam = { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 };
@@ -289,8 +300,8 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
       while (g.measureText(line).width > FW - 90 * SC && fs > 32 * SC) { fs -= 4 * SC; g.font = `600 ${fs}px Fraunces, Georgia, serif`; }
       g.fillStyle = '#28343E'; g.fillText(line, FW / 2, FH * 0.11);
       g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText(sub, FW / 2, FH * 0.11 + 50 * SC);
-      g.font = `600 ${46 * SC}px Fraunces, Georgia, serif`; g.fillStyle = '#7A4A0F'; g.fillText('Cloudia', FW / 2, FH * 0.84);
-      g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText('In the app, it lights up.', FW / 2, FH * 0.84 + 46 * SC);
+      g.font = `600 ${46 * SC}px Fraunces, Georgia, serif`; g.fillStyle = '#7A4A0F'; g.fillText('Cloudia', FW / 2, FH * 0.82);
+      g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText('In the app, it lights up.', FW / 2, FH * 0.82 + 46 * SC);
       g.shadowBlur = 0; g.globalAlpha = 1;
     }
     rcg.drawImage(cv, 0, 0, RW, RH);
@@ -315,7 +326,8 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const mime = pickMime();
   let raf = 0, start = 0, rec = null, file = null, url = null, closed = false, take = 0;
   function play() {
-    bar.hidden = true; hint.hidden = true; file = null; lastF = -1; doneN = 0; lastT = 0; for (const c of [ink, fill]) c.getContext('2d').clearRect(0, 0, AW, AH);
+    bar.hidden = true; hint.hidden = true; file = null; lastF = -1; doneN = 0; lastT = 0;
+    { const k = 1280 / Math.max(FW, FH); RW = Math.round(FW * k / 2) * 2; RH = Math.round(FH * k / 2) * 2; rc.width = RW; rc.height = RH; }   // 这一遍录像的尺寸定住，中途拉窗口不变 for (const c of [ink, fill]) c.getContext('2d').clearRect(0, 0, AW, AH);
     Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 });
     if (mime) {
       try {
@@ -355,7 +367,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     closed = true; cancelAnimationFrame(raf);
     if (rec && rec.state === 'recording') rec.stop();
     if (url) URL.revokeObjectURL(url);
-    el.hidden = true; document.documentElement.style.overflow = prevOverflow; removeEventListener('keydown', esc);
+    el.hidden = true; el.classList.remove('full'); removeEventListener('resize', onResize); document.documentElement.style.overflow = prevOverflow; removeEventListener('keydown', esc);
     const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
   };
   const esc = e => { if (e.key === 'Escape') close(); };
