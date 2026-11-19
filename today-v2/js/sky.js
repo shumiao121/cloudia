@@ -54,7 +54,7 @@ vec3 sky(vec3 d){ d.y = abs(d.y); float u = fract(0.5 + atan(d.x, -d.z) / 6.2831
 void main(){ vec2 uv = vUV;
   if (uRefl > 0.5) uv.x += sin(uv.y * 40.0 + uTime * 1.7) * 0.005;           // 水面一点点晃
   vec4 c = texture2D(uT, uv); float a = c.a * uA;
-  if (uCloud > 0.5) {
+  if (uCloud > 0.75 && uCloud < 1.5) {
     vec3 rel = vW - uEye; float dist = length(rel); vec3 d = rel / dist;
     vec3 bg = sky(d), amb = sky(normalize(vec3(d.x, 0.3, d.z)));
     float edge = 1.0 - smoothstep(0.45, 1.0, c.a);
@@ -63,12 +63,15 @@ void main(){ vec2 uv = vUV;
     c.rgb = mix(c.rgb, c.rgb * vec3(0.6, 0.62, 0.7), back * (1.0 - edge));
     c.rgb += vec3(1.0, 0.84, 0.58) * back * edge * 1.1;
     c.rgb = mix(c.rgb, bg, clamp(1.0 - exp(-dist * 0.02), 0.0, 0.18) + edge * 0.18 * (1.0 - back));   // 雾轻一点：照片里同样远的真云顶上是奶白的
-  } else if (uCloud > 0.25) {   // 云上的线：颜色照原样，只跟云一起蒙远处的雾
+  } else if (uCloud > 0.25 && uCloud < 0.75) {   // 云上的线：颜色照原样，只跟云一起蒙远处的雾
     vec3 rel = vW - uEye; float dist = length(rel);
     c.rgb = mix(c.rgb, sky(rel / dist), clamp(1.0 - exp(-dist * 0.035), 0.0, 0.35));
   }
   if (uRefl > 0.5) { a *= 0.42 * mix(0.12, 1.0, uv.y); c.rgb *= uTint; }   // 倒影：淡、靠水面那头最清楚
-  if (a < 0.003) discard; gl_FragColor = vec4(c.rgb * a, a); }`;
+  if (a < 0.003) discard;
+  // 光晕那一层（uCloud = 2）：一半相加、一半盖上去——纯相加在白云上加到顶就是白的，看不出是金光；
+  // 盖上去一点，线周围的云被染成暖金，才读得出「亮着」
+  gl_FragColor = uCloud > 1.5 ? vec4(c.rgb * a, a * 0.5) : vec4(c.rgb * a, a); }`;
 
 // ---------- 把画变成云 ----------
 // 遮罩：画所在的地方（加粗一圈，细线也能长出云来）
@@ -185,6 +188,19 @@ function cloudFromTex(mask, out, R, seed) {
     o[i * 4 + 3] = 255 * a;
   }
   g.putImageData(im, 0, 0);
+}
+// 11-19 他要线「带一点光」：把线糊开成一圈暖光（两层：贴着线的一圈 + 散开的一大圈），叠在线底下、用相加的方式。
+// 用画布影子来糊（Safari 旧版不认 ctx.filter）：把线画在画布外面，只让影子落回来
+function glowOf(lines, k = 1) {
+  const W = lines.width, H = lines.height, out = mk(W, H), g = out.getContext('2d'), far = W + 50;
+  // 细线糊开就淡得看不见（你的笔比「我们看见的」细）：先按画布宽的 0.6% 加粗一圈再糊
+  const fat = mk(W, H), fg = fat.getContext('2d'), rr = W * 0.006 * k;
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; fg.drawImage(lines, Math.cos(a) * rr, Math.sin(a) * rr); }
+  fg.drawImage(lines, 0, 0);
+  for (const [blur, col] of [[W * 0.035 * k, 'rgba(255,186,96,1)'], [W * 0.035 * k, 'rgba(255,186,96,1)'], [W * 0.009 * k, 'rgba(255,214,140,1)']]) {
+    g.save(); g.shadowColor = col; g.shadowBlur = blur; g.shadowOffsetX = far; g.drawImage(fat, -far, 0); g.restore();
+  }
+  return out;
 }
 const toCloud = (mask, out, R, seed) => (CLOUDTEX ? cloudFromTex : cloudify)(mask, out, R, seed);
 // 「我们看见的」：只要云，不要线、不要字
@@ -324,9 +340,10 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const tB = performance.now();
   for (const c of cards) {
     if (c.mine) { c.tex = texOf(c.canvas, false); const b = bake && bake(mineMask, 200, 7);
+      { const ml = mk(mine.width, mine.height); ml.getContext('2d').drawImage(fullArt, sx, sy, sw, sh, ox, pad, dw, dh); c.glowTex = texOf(glowOf(ml), false); }
       if (b) c.cloudTex = b.tex; else { if (!mineCloud) { mineCloud = mk(mine.width, mine.height); CLOUDTEX = null; toCloud(mineMask, mineCloud, R, 7); } c.cloudTex = texOf(mineCloud, false); } continue; }
     const b = c.puff && bake(c.canvas, 110, c.seed);
-    if (b && c.lines) c.linesTex = texOf(c.lines, false);
+    if (b && c.lines) { c.linesTex = texOf(c.lines, false); c.glowTex = texOf(glowOf(c.lines, 1.3), false); }
     if (b) c.tex = b.tex; else { if (c.puff) { const out = mk(c.canvas.width, c.canvas.height); toCloud(c.canvas, out, out.width * 0.036, c.seed); c.canvas = out; } c.tex = texOf(c.canvas, false); }
   }
   gl.finish(); const bakeMs = Math.round(performance.now() - tB);
@@ -366,8 +383,10 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
       const pop = c.mine ? 1 : smooth(0, 0.6, t - 0.2), drift = Math.sin(t * 0.08 + c.ph) * 0.25;
       const y = c.y + Math.sin(t * 0.45 + c.ph) * 0.05, s = refl ? -1 : 1;
       // 你的画鼓成云以后，线还留在云上（颜色、笔刷都照原样，淡到 0.85）；「我们看见的」也带着淡淡的线
-      const layers = c.mine ? [[c.cloudTex, m, 0.94 + 0.06 * m, 1], [c.tex, 1 - 0.15 * m, 1, m > 0.01 ? 0.5 : 0]]
-        : c.linesTex ? [[c.tex, pop, 1, 1], [c.linesTex, pop * 0.55, 1, 0.5]] : [[c.tex, pop, 1, 1]];
+      // 光：画完鼓成云以后慢慢亮起来，之后很慢地一呼一吸（每朵错开）
+      const breath = 0.82 + 0.18 * Math.sin(t * 1.1 + c.ph * 3.0);
+      const layers = c.mine ? [[c.cloudTex, m, 0.94 + 0.06 * m, 1], [c.glowTex, m * 0.9 * breath, 1, 2], [c.tex, 1 - 0.15 * m, 1, m > 0.01 ? 0.5 : 0]]
+        : c.linesTex ? [[c.tex, pop, 1, 1], [c.glowTex, pop * 0.45 * breath, 1, 2], [c.linesTex, pop * 0.55, 1, 0.5]] : [[c.tex, pop, 1, 1]];
       for (const [tex, alpha, k, isCloud] of layers) {
         if (alpha <= 0.002) continue;
         const hw = c.w / 2 * k, hh = c.h / 2 * k, cx = c.x + rx * drift, cz = c.z + rz * drift;

@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=26';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=27';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
