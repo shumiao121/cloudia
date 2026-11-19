@@ -105,8 +105,19 @@ function cloudify(mask, out, R, seed) {
 // 边上按噪声磨成毛边、薄处透一点亮——颜色和光就是天上那些云的。纹理没加载上才退回上面自己算的。
 let CLOUDTEX = null;   // { img, rects: [[x, y, w, h], …] }
 function cloudFromTex(mask, out, R, seed) {
-  const W = out.width, H = out.height, f = clamp(R * 1.1, 4, 24);   // 糊得宽一点：边缘是一大段由浓到淡，不是一条线
-  const sm = mk(W / f, H / f); sm.getContext('2d').drawImage(mask, 0, 0, sm.width, sm.height);
+  // 软边：缩到四分之一，在小图上横竖各模糊两遍（近似高斯），再放大回来——边上由浓到淡、没有台阶
+  const W = out.width, H = out.height, q = 4, sw4 = Math.ceil(W / q), sh4 = Math.ceil(H / q);
+  const sm = mk(sw4, sh4), smg = sm.getContext('2d', { willReadFrequently: true }); smg.drawImage(mask, 0, 0, sw4, sh4);
+  const sd = smg.getImageData(0, 0, sw4, sh4), A = new Float32Array(sw4 * sh4), T = new Float32Array(sw4 * sh4), rb = Math.max(1, Math.round(R * 0.9 / q));
+  for (let i = 0; i < A.length; i++) A[i] = sd.data[i * 4 + 3];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < sh4; y++) { let acc = 0; for (let x = -rb; x <= rb; x++) acc += A[y * sw4 + clamp(x, 0, sw4 - 1)];
+      for (let x = 0; x < sw4; x++) { T[y * sw4 + x] = acc / (2 * rb + 1); acc += A[y * sw4 + Math.min(sw4 - 1, x + rb + 1)] - A[y * sw4 + Math.max(0, x - rb)]; } }
+    for (let x = 0; x < sw4; x++) { let acc = 0; for (let y = -rb; y <= rb; y++) acc += T[clamp(y, 0, sh4 - 1) * sw4 + x];
+      for (let y = 0; y < sh4; y++) { A[y * sw4 + x] = acc / (2 * rb + 1); acc += T[Math.min(sh4 - 1, y + rb + 1) * sw4 + x] - T[Math.max(0, y - rb) * sw4 + x]; } }
+  }
+  for (let i = 0; i < A.length; i++) { sd.data[i * 4] = sd.data[i * 4 + 1] = sd.data[i * 4 + 2] = 255; sd.data[i * 4 + 3] = A[i]; }
+  smg.putImageData(sd, 0, 0);
   const bl = mk(W, H), blg = bl.getContext('2d', { willReadFrequently: true }); blg.imageSmoothingQuality = 'high'; blg.drawImage(sm, 0, 0, W, H);
   const B = blg.getImageData(0, 0, W, H).data, b = bboxOf(mask) || { u0: 0, v0: 0, u1: 1, v1: 1 };
   const [tx, ty, tw, th] = CLOUDTEX.rects[seed % CLOUDTEX.rects.length];
