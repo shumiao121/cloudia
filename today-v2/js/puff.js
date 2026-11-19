@@ -44,7 +44,9 @@ void main(){
   col += uRim * pow(max(0.0, dot(nn, h)), 14.0) * 0.22 * sunTerm;
   float fresnel = pow(1.0 - NdotV, 2.4), mie = pow(max(0.0, dot(-v, l)), 2.6);
   col += uRim * (fresnel * 0.35 + mie * fresnel * 0.65);
-  float alpha = smoothstep(0.02, 0.90, clamp(pow(NdotV, 0.24) * 1.18, 0.0, 1.0));
+  // 边：比 app 再虚一点（app 里「轻」那种料的做法），再按絮把最外一圈咬成一缕缕的——贴在照片天上，硬边最显眼
+  float alpha = smoothstep(0.10, 0.95, clamp(pow(NdotV, 0.3) * 1.12, 0.0, 1.0));
+  alpha *= mix(clamp(0.35 + billow(p * 3.1) * 1.4, 0.0, 1.0), 1.0, smoothstep(0.2, 0.55, NdotV));
   gl_FragColor = vec4(pow(filmic(max(col, 0.0)), vec3(1.0 / 2.2)), alpha);
 }`;
 

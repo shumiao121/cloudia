@@ -7,7 +7,7 @@
 // 只用浏览器自带的 WebGL，不引库、不从别的网站加载。只动不亮（发光留给 app）。
 import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
-import { makePuffBaker } from './puff.js?v=27';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
+import { makePuffBaker } from './puff.js?v=28';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
 
 const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺满整个窗口、跟着窗口变；画面按屏幕像素（长边最多 2560），录像按窗口比例、长边 1280
 // 11-19 他说天还是糊：World Labs 的全景真实细节只有约 2300 宽，放大补不出来。换成 Poly Haven 实拍的纯天空日落（CC0），
@@ -15,8 +15,8 @@ const EYE = 1.6, MAXPX = 2560;   // 11-19 他说网页是给电脑用的：铺�
 // 三档：s 1024 先进场 → m 4096 → h0/h1 两半合 8192；最多等 6 秒，等到哪档用哪档，之后到了再换上。
 // turn：转多少让正前方对着好看的云；tint：水里倒影的那层颜色
 const SKIES = {
-  klop: { turn: 0.0, tint: [0.80, 0.85, 0.92] },
-  belfast: { turn: 0.08, tint: [0.84, 0.80, 0.86] },
+  klop: { turn: 0.0, tint: [0.80, 0.85, 0.92], sun: [0.645, 0.03, -0.764] },   // sun：照片里太阳的方向（klop 在 u≈0.61）
+  belfast: { turn: 0.08, tint: [0.84, 0.80, 0.86], sun: [0.426, 0.03, -0.905] },
 };
 const SKY_NAME = (() => { try { const q = new URLSearchParams(location.search).get('sky'); return SKIES[q] ? q : 'klop'; } catch (_) { return 'klop'; } })();
 const SKY_DIR = `sky/${SKY_NAME}/`, PANO_SMALL = SKY_DIR + 's.jpg', PANO = SKY_DIR + 'm.jpg', PANO_HD = [SKY_DIR + 'h0.jpg', SKY_DIR + 'h1.jpg'], PANO_TURN = SKIES[SKY_NAME].turn;
@@ -42,11 +42,28 @@ void main(){ vec3 d = normalize(uF + uR * vP.x * uTan.x + uU * vP.y * uTan.y);
   vec3 c = uSplit < 0.5 ? texture2D(uT, vec2(u, v)).rgb : (u < 0.5 ? texture2D(uT, vec2(u * 2.0, v)).rgb : texture2D(uT2, vec2(u * 2.0 - 1.0, v)).rgb);
   if (below > 0.5) c *= mix(uTint * 0.74, vec3(1.0), pow(1.0 - dn, 10.0));   // 贴着地平线和天一样亮（不留一道线），往脚下渐暗
   gl_FragColor = vec4(c, 1.0); }`;
-const CARD_VS = `attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uVP; varying vec2 vUV; void main(){ vUV = aUV; gl_Position = uVP * vec4(aPos, 1.0); }`;
-const CARD_FS = `precision mediump float; varying vec2 vUV; uniform sampler2D uT; uniform float uA, uRefl, uTime; uniform vec3 uTint;
+const CARD_VS = `attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uVP; varying vec2 vUV; varying vec3 vW; void main(){ vUV = aUV; vW = aPos; gl_Position = uVP * vec4(aPos, 1.0); }`;
+// 11-19 他说捏出来的云「不和谐」：白得发亮、边硬，像贴在天上。云卡片现在会看身后和四周的天：
+// ① 沾一点周围天的颜色；② 越远蒙一层和身后同色的雾；③ 挡在太阳前面的那几朵身子暗下去、薄边透出金光（逆光）；
+// ④ 半透明的边染上身后的天色。线稿那一层（uCloud = 0）不动
+const CARD_FS = `precision highp float; varying vec2 vUV; varying vec3 vW;
+uniform sampler2D uT, uSB; uniform float uA, uRefl, uTime, uCloud, uTurn; uniform vec3 uTint, uEye, uSun;
+// 天的颜色只取糊过的那一张（64×16）：要的是「那一片天大概什么色」，不要身后那几朵真云的纹路——带纹路混进来，云像块玻璃
+vec3 sky(vec3 d){ d.y = abs(d.y); float u = fract(0.5 + atan(d.x, -d.z) / 6.2831853 + uTurn); float v = min(acos(clamp(d.y, 0.0, 1.0)) / 1.5707963, 0.97);
+  return texture2D(uSB, vec2(u, v)).rgb; }
 void main(){ vec2 uv = vUV;
   if (uRefl > 0.5) uv.x += sin(uv.y * 40.0 + uTime * 1.7) * 0.005;           // 水面一点点晃
   vec4 c = texture2D(uT, uv); float a = c.a * uA;
+  if (uCloud > 0.5) {
+    vec3 rel = vW - uEye; float dist = length(rel); vec3 d = rel / dist;
+    vec3 bg = sky(d), amb = sky(normalize(vec3(d.x, 0.3, d.z)));
+    float edge = 1.0 - smoothstep(0.45, 1.0, c.a);
+    c.rgb *= mix(vec3(1.0), amb / max(max(amb.r, amb.g), max(amb.b, 0.001)), 0.2) * 0.94;
+    float back = smoothstep(0.78, 0.98, dot(normalize(d.xz), normalize(uSun.xz)));   // 只有正挡着太阳的那几朵
+    c.rgb = mix(c.rgb, c.rgb * vec3(0.6, 0.62, 0.7), back * (1.0 - edge));
+    c.rgb += vec3(1.0, 0.84, 0.58) * back * edge * 1.1;
+    c.rgb = mix(c.rgb, bg, clamp(1.0 - exp(-dist * 0.035), 0.0, 0.35) + edge * 0.22 * (1.0 - back));
+  }
   if (uRefl > 0.5) { a *= 0.42 * mix(0.12, 1.0, uv.y); c.rgb *= uTint; }   // 倒影：淡、靠水面那头最清楚
   if (a < 0.003) discard; gl_FragColor = vec4(c.rgb * a, a); }`;
 
@@ -285,6 +302,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const canHD = maxTex >= 4096;
   if (!canHD) level = 0;
+  // 糊过的天：小图缩到 64×16（两次缩，近似模糊），左右接缝处横向可以绕回去
+  const skyBlur = mk(64, 16); { const t1 = mk(256, 64); t1.getContext('2d').drawImage(pano, 0, 0, 256, 64); const sg = skyBlur.getContext('2d'); sg.imageSmoothingQuality = 'high'; sg.drawImage(t1, 0, 0, 64, 16); }
+  const skyBlurTex = texOf(skyBlur, true);
   const panoTex = texOf(level === 2 ? hd[0] : (level === 1 ? big : pano), false), panoTex2 = texOf(level === 2 ? hd[1] : pano, false);
   const upgrade = (lv) => {
     if (closed || !canHD || lv <= level) return;
@@ -327,6 +347,8 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     if (drawOn(t)) { gl.bindTexture(gl.TEXTURE_2D, cards[0].tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mine); }
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.useProgram(cardP.p);
     gl.uniformMatrix4fv(cardP.loc.uVP, false, VP); gl.uniform1i(cardP.loc.uT, 0); gl.uniform1f(cardP.loc.uTime, t); gl.uniform3fv(cardP.loc.uTint, SKIES[SKY_NAME].tint);
+    gl.uniform3f(cardP.loc.uEye, cam.x, EYE, cam.z); gl.uniform3fv(cardP.loc.uSun, SKIES[SKY_NAME].sun); gl.uniform1f(cardP.loc.uTurn, PANO_TURN);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, skyBlurTex); gl.uniform1i(cardP.loc.uSB, 1); gl.activeTexture(gl.TEXTURE0);
     gl.bindBuffer(gl.ARRAY_BUFFER, cardBuf);
     gl.enableVertexAttribArray(cardP.loc.aPos); gl.enableVertexAttribArray(cardP.loc.aUV);
     const rx = Math.cos(cam.yaw), rz = Math.sin(cam.yaw);   // 镜头的「右」（水平）
@@ -335,15 +357,15 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     for (const refl of [1, 0]) for (const { c } of order) {
       const pop = c.mine ? 1 : smooth(0, 0.6, t - 0.2), drift = Math.sin(t * 0.08 + c.ph) * 0.25;
       const y = c.y + Math.sin(t * 0.45 + c.ph) * 0.05, s = refl ? -1 : 1;
-      const layers = c.mine ? [[c.cloudTex, m, 0.94 + 0.06 * m], [c.tex, 1 - m, 1]] : [[c.tex, pop, 1]];
-      for (const [tex, alpha, k] of layers) {
+      const layers = c.mine ? [[c.cloudTex, m, 0.94 + 0.06 * m, 1], [c.tex, 1 - m, 1, 0]] : [[c.tex, pop, 1, 1]];
+      for (const [tex, alpha, k, isCloud] of layers) {
         if (alpha <= 0.002) continue;
         const hw = c.w / 2 * k, hh = c.h / 2 * k, cx = c.x + rx * drift, cz = c.z + rz * drift;
         const x0 = cx - rx * hw, z0 = cz - rz * hw, x1 = cx + rx * hw, z1 = cz + rz * hw, yt = s * (y + hh), yb = s * (y - hh);
         verts.set([x0, yt, z0, 0, 0, x1, yt, z1, 1, 0, x0, yb, z0, 0, 1, x1, yt, z1, 1, 0, x1, yb, z1, 1, 1, x0, yb, z0, 0, 1]);
         gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.vertexAttribPointer(cardP.loc.aPos, 3, gl.FLOAT, false, 20, 0); gl.vertexAttribPointer(cardP.loc.aUV, 2, gl.FLOAT, false, 20, 12);
-        gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1f(cardP.loc.uA, alpha); gl.uniform1f(cardP.loc.uRefl, refl);
+        gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1f(cardP.loc.uA, alpha); gl.uniform1f(cardP.loc.uRefl, refl); gl.uniform1f(cardP.loc.uCloud, isCloud);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
     }
