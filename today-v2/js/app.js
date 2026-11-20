@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=35';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=36';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -589,6 +589,8 @@ function boot() {
     fitFigure($('ours'), ITEM.w, ITEM.h); bleed(); board.resize(1); previews(); if (stage === 'reveal') showOurs(showing);
   }, 150); });
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
+  // 从下面点了别的云（网址带 #ask）：直接停在画画区域。浏览器刷新时会把旧的滚动位置恢复回来盖掉锚点，所以自己再滚一次
+  if (location.hash === '#ask') { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; requestAnimationFrame(() => $('ask').scrollIntoView({ block: 'start' })); }
 }
 // ---------- 首屏：云世界（11-20）。页面先照常出来，等今天这朵的图加载完再起，免得抢带宽 ----------
 // 11-20 晚他说「加载慢」「先勾勒一个简单的图，转动后看到彩色的图」：首屏先在 cloud_21 那张真云上勾一条简单的鲸鱼
