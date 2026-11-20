@@ -274,3 +274,5 @@ figure.board.loading img { opacity: 0; }
 .hero-go:hover { background: #2b3843; }
 .hero-go:focus-visible { outline: 3px solid #ffd27a; outline-offset: 3px; }
 #ask { scroll-margin-top: 12px; }
+/* 导出键（11-20）：和 Done 一排，别被挤成两行 */
+#exportBtn { white-space: nowrap; padding-left: 12px; padding-right: 12px; }
