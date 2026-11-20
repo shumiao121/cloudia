@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=33';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=34';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -586,6 +586,7 @@ async function startHero() {
     if (!w) return;
     host.querySelector('canvas').classList.add('on'); setTimeout(() => host.classList.add('live'), 1200);
     if (location.hostname === 'localhost' || params.has('debug')) window.__hero = w;
+    for (const b of host.querySelectorAll('[data-turn]')) b.onclick = () => { w.turn(+b.dataset.turn * Math.PI / 3); host.classList.add('touched'); count('hero-turn'); };
     if ('IntersectionObserver' in window) new IntersectionObserver(es => { for (const e of es) e.isIntersecting ? w.resume() : w.pause(); }, { threshold: 0.05 }).observe(host);
   } catch (_) {}
 }

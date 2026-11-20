@@ -573,7 +573,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   let paused = false, pausedAt = 0;
   const pause = () => { if (paused || closed) return; paused = true; pausedAt = performance.now(); cancelAnimationFrame(raf); };
   const resume = () => { if (!paused || closed) return; paused = false; start += performance.now() - pausedAt; raf = requestAnimationFrame(frame); };
-  return { close, pause, resume, duration: TEND, cards: cards.length, bakeMs, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
+  // 首屏两边的箭头：转 d 弧度（给一下转速，按 0.92 每帧衰减，总共转 d），算人动过
+  const turn = d => { cam.user = true; cam.touchedAt = performance.now(); cam.vy += d * (1 - 0.92); };
+  return { close, pause, resume, turn, duration: TEND, cards: cards.length, bakeMs, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
 
 // 调云的样子时在页面里直接画几朵看（不进场景）

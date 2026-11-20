@@ -248,12 +248,21 @@ figure.board.loading img { opacity: 0; }
 .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 1s ease; touch-action: pan-y; }
 .hero canvas.on { opacity: 1; cursor: grab; }
 .hero canvas.on:active { cursor: grabbing; }
-/* 拖着看的提示：首屏亮起来以后出现，拖过一次就收起 */
-.hero-hint { position: absolute; left: 50%; bottom: calc(max(5.5%, env(safe-area-inset-bottom, 0px)) + 62px); transform: translateX(-50%); margin: 0;
-  font-size: 13px; color: #24313c; background: rgba(255,255,255,.62); padding: 5px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap;
-  opacity: 0; transition: opacity .6s ease; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-.hero.live .hero-hint { opacity: 1; }
-.hero.touched .hero-hint { opacity: 0; }
+/* 转动标识：主按钮上方，常驻；首屏亮起来以后淡入。中间的图标轻轻左右摆，拖过一次就停 */
+.hero-turn { position: absolute; left: 50%; bottom: calc(max(5.5%, env(safe-area-inset-bottom, 0px)) + 64px); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; white-space: nowrap; color: #1f2b35;
+  background: rgba(255,255,255,.6); box-shadow: 0 4px 18px rgba(15,25,35,.14); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+.hero.live .hero-turn { opacity: 1; pointer-events: auto; }
+.ht-btn { width: 34px; height: 34px; border: 0; border-radius: 999px; background: transparent; color: inherit; font-size: 24px; line-height: 1; cursor: pointer; padding: 0 0 3px; }
+.ht-btn:hover { background: rgba(255,255,255,.75); }
+.ht-btn:focus-visible { outline: 3px solid #ffd27a; outline-offset: 1px; }
+.ht-mid { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; padding: 0 4px; }
+.ht-ico { width: 26px; height: 26px; animation: htSway 2.4s ease-in-out infinite; }
+.hero.touched .ht-ico { animation: none; }
+@keyframes htSway { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+@media (max-width: 420px) { .ht-mid { font-size: 12.5px; } }
+@media (prefers-reduced-motion: reduce) { .ht-ico { animation: none; } }
 .hero-text { position: absolute; left: 0; right: 0; top: max(4.5%, env(safe-area-inset-top, 0px)); padding: 0 max(16px, env(safe-area-inset-left, 0px));
   text-align: center; color: #1f2b35; pointer-events: none; text-shadow: 0 0 22px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
 .hero-brand { font-family: Fraunces, Georgia, serif; font-weight: 600; color: #7A4A0F; font-size: 18px; letter-spacing: .02em; margin: 0 0 4px; }
