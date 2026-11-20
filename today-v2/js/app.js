@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=30';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=31';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -436,9 +436,11 @@ function save() {
 function restore() {
   try {
     const s = store && JSON.parse(store.getItem(key) || 'null');
-    if (s) { board.load(s.board); said = s.said || ''; started = !board.isEmpty(); }
+    // 11-20 他说「下移画画，还是原来的图，应该是新的画布」：画完了的那一幅（停在揭晓）不再带回来，回来就是一张新画布；
+    // 没画完的（还在画）照旧接着画
+    if (s && s.stage === 'reveal') { try { store.removeItem(key); } catch (_) {} }
+    else if (s) { board.load(s.board); said = s.said || ''; started = !board.isEmpty(); }
     restored = true;
-    if (s && s.stage === 'reveal') setStage('reveal', true);
   } catch (_) { restored = true; }
 }
 
@@ -571,16 +573,16 @@ function boot() {
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
 // ---------- 首屏：云世界（11-20）。页面先照常出来，等今天这朵的图加载完再起，免得抢带宽 ----------
-// 演的是评审台里那幅「驮着小村子飞的鲸鱼妈妈」（cloud_21 那张真云上画的）：真云飘进来 → 画一笔笔显出来 → 镜头左右慢慢摆
-// 素材是 tools/web/build_sky_gallery.py 出的 sky/demo-*（抠好的真云、只有画的一层、每个像素第几笔的时间图）
+// 11-20 晚他说「加载慢」「先勾勒一个简单的图，转动后看到彩色的图」：首屏先在 cloud_21 那张真云上勾一条简单的鲸鱼
+// （sky/demo-line.json 几 KB），线画完亮一圈暖光；镜头摆过去才看到评审台那几幅彩色插画（sky.js 在后台下好再挂）
 async function startHero() {
   const host = document.getElementById('hero'); if (!host) return;
   try {
-    const meta = await fetch('sky/demo.json').then(r => r.json());
-    const load = src => { const im = new Image(); im.src = src; return im.decode().then(() => im); };
-    const [photo, paint, time] = await Promise.all(['sky/demo-photo.webp', 'sky/demo-paint.webp', 'sky/demo-time.png'].map(load));
-    const blank = { strokes: [], composeInto() {} };
-    const w = await enterSky({ photo, board: blank, line: '', sub: '', host, art: { photo, paint, time, aspect: meta.aspect } });
+    const rd = await fetch('sky/demo-line.json').then(r => r.json());
+    const img = new Image(); img.src = `items/${rd.id}.webp`; await img.decode();
+    const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
+    const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
+    const w = await enterSky({ photo: img, board: fake, line: '', sub: '', host });
     if (!w) return;
     host.querySelector('canvas').classList.add('on');
     if (location.hostname === 'localhost' || params.has('debug')) window.__hero = w;
@@ -592,7 +594,8 @@ if (document.readyState === 'complete') setTimeout(startHero, 200); else addEven
 // 已经画过：画留着、画笔亮出来，接着画或者 Start over
 document.querySelector('.hero-go')?.addEventListener('click', e => {
   count('hero-go');
-  if (stage !== 'draw' && !paperMode) { e.preventDefault(); setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }
+  // 画完了（停在揭晓）再点：新的一张画布
+  if (stage !== 'draw' && !paperMode) { e.preventDefault(); said = ''; board.clear(); setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }
 });
 
 let ITEM;
