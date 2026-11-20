@@ -270,7 +270,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const hdP = bigP.then(() => { hd.forEach((im, k) => { im.src = PANO_HD[k]; }); return Promise.all(hd.map(im => im.decode())); }).then(() => 2).catch(() => 0);
   try {
     pano = new Image(); pano.src = PANO_SMALL;
-    const texImg = new Image(); texImg.src = SKY_DIR + 'cloudtex.jpg';
+    const texImg = new Image(); if (!bake) texImg.src = SKY_DIR + 'cloudtex.jpg';   // 只有捏云用不了时才要这张（11-20 整体测试发现以前每次都白下 200KB）
     const texP = bake ? Promise.resolve() : Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
     // 11-20 天上挂的换成评审台里他打 90 分的那几幅（画好的成图，sky/gallery/）；读不到退回「我们看见的」线稿云
     // 带版本号：换过挂哪几幅以后，浏览器别拿缓存里的旧清单（11-20 测的时候羊群又出来了）
