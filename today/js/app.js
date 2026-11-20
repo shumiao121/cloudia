@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=39';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=43';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -86,6 +86,7 @@ const board = new Board(fig, photo, {
   onPick: c => { setColor(c); setTool(lastTool); toast('Picked a color from the picture'); },
   onNote: what => { if (what === 'fill') toast('Close the shape first — the color would spill out.'); },
 });
+if (location.hostname === 'localhost' || params.has('debug')) window.__board = board;   // 测试、做宣传片时直接往画板里放画
 $('zoomReset').onclick = () => board.resetZoom();
 $('zoomIn').onclick = () => board.zoomBy(1.5);
 $('zoomOut').onclick = () => board.zoomBy(1 / 1.5);
@@ -405,7 +406,7 @@ $('share').onclick = async () => {
 $('stepIn').onclick = () => {
   count('inside');
   const opts = {
-    photo, board, count,
+    photo, board, count, realCloud: ITEM.kind === 'cloud',
     line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
     sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
     storeHref: `https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=${ctOf('inside')}&mt=8`,
@@ -614,9 +615,10 @@ async function startHero() {
   const host = document.getElementById('hero'); if (!host) return;
   if ('IntersectionObserver' in window) await new Promise(r => { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); r(); } }); io.observe(host); });
   try {
-    const rd = await fetch('sky/demo-line.json?v=2').then(r => r.json());
+    // 11-21 他嫌那条简单的鲸鱼丑、要「不要彩色的，一笔一笔勾勒」：换成评审台 90 分那幅鲸鱼妈妈驮村子的墨线（280 笔，不带上色）
+    const rd = await fetch('sky/demo-ink.json?v=1').then(r => r.json());
     const img = new Image(); img.src = `items/${rd.id}.webp`; await img.decode();
-    const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
+    const ops = rd.strokes.map(s => ({ t: 'ink', c: '#1A1B24', w: Math.max(0.0026, s.w * 1.9), p: s.p }));
     const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
     const w = await enterSky({ photo: img, board: fake, line: '', sub: '', host });
     if (!w) return;
