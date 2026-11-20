@@ -227,7 +227,9 @@ function readingCloud(rd, seed) {
 // host：11-20 他要「打开网页先进到这个云世界，飘来一朵云、完成勾勒」——首屏版。给了 host（一个带 <canvas> 的元素）就是首屏：
 // 不弹全屏、不录像、不收手势（不挡页面滚动），开场是一朵真云（照片抠出来的）从右边飘进来，线一笔笔描上去，再鼓成云，
 // 转一圈，循环。skip：首屏演的那一幅本身也在「我们看见的」里，别再挂一份
-export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null, host = null, skip = null, art = null }) {
+export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null, host = null, skip = null, art = null, realCloud = false }) {
+  // realCloud：11-21 他说「云世界里要先有一朵云，然后再画画」——画在真云照片上的（不是旧画、白纸），点进来先是那朵真云（照片抠出来）
+  // 浮在天上，线再一笔笔画上去，然后鼓成云。首屏一直是这样
   // art：11-20 首屏改演评审台里那幅「驮着小村子飞的鲸鱼妈妈」——{photo 抠好的真云, paint 只有画, time 每个像素第几笔, aspect}
   // （tools/web/build_sky_gallery.py 出的）。画一点点显出来，不鼓成云；镜头只左右慢慢摆，不整圈转（他说转得晕）
   const demo = !!host;
@@ -299,21 +301,21 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   if (!bake) { mineCloud = mk(mine.width, mine.height); toCloud(mineMask, mineCloud, R, 7); }
   // 首屏：那朵真云本身——照片按画的同一个比例摆上来，蓝天按白度抠掉（蓝天饱和、云发白），四边在留白里淡出
   let photoCard = null;
-  if (demo && !art) {
+  if ((demo || realCloud) && !art) {
     photoCard = mk(mine.width, mine.height); const pg = photoCard.getContext('2d', { willReadFrequently: true });
     pg.drawImage(photo, ox - sx * kk, pad - sy * kk, AW * kk, AH * kk);
     const PW = photoCard.width, PH = photoCard.height, im = pg.getImageData(0, 0, PW, PH), d = im.data, fe = pad * 1.4;
     for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
       const i = (y * PW + x) * 4, mx = Math.max(d[i], d[i + 1], d[i + 2], 1), wv = Math.min(d[i], d[i + 1], d[i + 2]) / mx;
       const edge = smooth(0, 1, Math.min(x, PW - 1 - x, y, PH - 1 - y) / fe);
-      d[i + 3] = 255 * smooth(0.66, 0.88, wv) * smooth(0.25, 0.55, mx / 255) * edge;
+      d[i + 3] = 255 * smooth(0.56, 0.8, wv) * smooth(0.18, 0.42, mx / 255) * edge;   // 抠宽一点：云的灰底也留下，整朵是一团实的云
     }
     pg.putImageData(im, 0, 0);
   }
   const ops = board.strokes, ink = mk(AW, AH), fill = mk(AW, AH), live = mk(AW, AH), tmp = mk(AW, AH);
   const lenOf = s => { if (!s.p || s.p.length < 2 || s.t === 'fill' || s.t === 'shape') return 0; let L = 0; for (let i = 1; i < s.p.length; i++) L += Math.hypot((s.p[i][0] - s.p[i - 1][0]) * AW, (s.p[i][1] - s.p[i - 1][1]) * AH); return L; };
   const unit = ops.map(s => Math.max(lenOf(s), 40)), total = unit.reduce((a, b) => a + b, 0) || 1;
-  const T0 = demo ? 2.6 : 0.7, drawDur = ops.length ? (demo ? clamp(total / 600, 2.2, 3.6) : clamp(total / 1300, 1.0, 2.6)) : 0;
+  const T0 = demo ? 2.6 : photoCard ? 1.8 : 0.7, drawDur = ops.length ? (demo ? clamp(total / 600, 2.2, 3.6) : clamp(total / 1300, 1.0, 2.6)) : 0;
   let doneN = 0, lastF = -1;
   function drawOn(t) {   // 返回 true 表示卡片变了，要重新上传
     const f = clamp((t - T0) / Math.max(drawDur, 0.01), 0, 1);
@@ -421,7 +423,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     else if (!cam.user) cam.yaw += dt * 0.035;   // 开场完了没人碰：很慢地漂
     cam.yaw += cam.vy; cam.pitch = clamp(cam.pitch + cam.vp, demo ? -0.3 : -0.9, demo ? 0.6 : 1.2); cam.vy *= 0.92; cam.vp *= 0.92;
     const cp = Math.cos(cam.pitch), dir = [Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), -Math.cos(cam.yaw) * cp];
-    const eye = [cam.x, EYE, cam.z], L = lookAt(eye, [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]]), VP = mul(proj, L.m);
+    // 11-21「画太小，不够有冲击力」：开场镜头离你的那朵只有 2.8 米（画占大半个画面），画完以后 2.6 秒拉回原位，露出整片天。人动过就不推拉
+    const dz = cam.user ? 0 : (demo ? -1.0 : -2.4) * (1 - ease(clamp((t - (T0 + drawDur + 0.2)) / 3.2, 0, 1)));   // 开场离你那朵 2 米：竖屏里画铺满九成宽；首屏上面压着标题，只推近 1 米
+    const eye = [cam.x, EYE, cam.z + dz], L = lookAt(eye, [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]]), VP = mul(proj, L.m);
     gl.viewport(0, 0, FW, FH); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
     gl.useProgram(skyP.p);
     gl.uniform3fv(skyP.loc.uR, L.r); gl.uniform3fv(skyP.loc.uU, L.u); gl.uniform3fv(skyP.loc.uF, L.f); gl.uniform2f(skyP.loc.uTan, tanX, tanY); gl.uniform1f(skyP.loc.uTurn, PANO_TURN); gl.uniform1f(skyP.loc.uTime, t); gl.uniform3fv(skyP.loc.uTint, SKIES[SKY_NAME].tint);
@@ -433,12 +437,12 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     if (drawOn(t)) { gl.bindTexture(gl.TEXTURE_2D, cards[0].tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mine); }
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.useProgram(cardP.p);
     gl.uniformMatrix4fv(cardP.loc.uVP, false, VP); gl.uniform1i(cardP.loc.uT, 0); gl.uniform1f(cardP.loc.uTime, t); gl.uniform3fv(cardP.loc.uTint, SKIES[SKY_NAME].tint);
-    gl.uniform3f(cardP.loc.uEye, cam.x, EYE, cam.z); gl.uniform3fv(cardP.loc.uSun, SKIES[SKY_NAME].sun); gl.uniform1f(cardP.loc.uTurn, PANO_TURN);
+    gl.uniform3f(cardP.loc.uEye, eye[0], eye[1], eye[2]); gl.uniform3fv(cardP.loc.uSun, SKIES[SKY_NAME].sun); gl.uniform1f(cardP.loc.uTurn, PANO_TURN);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, skyBlurTex); gl.uniform1i(cardP.loc.uSB, 1); gl.activeTexture(gl.TEXTURE0);
     gl.bindBuffer(gl.ARRAY_BUFFER, cardBuf);
     gl.enableVertexAttribArray(cardP.loc.aPos); gl.enableVertexAttribArray(cardP.loc.aUV);
     const rx = Math.cos(cam.yaw), rz = Math.sin(cam.yaw);   // 镜头的「右」（水平）
-    const order = cards.map(c => ({ c, d: Math.hypot(c.x - cam.x, c.z - cam.z) })).sort((a, b) => b.d - a.d);
+    const order = cards.map(c => ({ c, d: Math.hypot(c.x - eye[0], c.z - eye[2]) })).sort((a, b) => b.d - a.d);
     const m = demo ? 0 : smooth(TM, TM + MORPH, t);   // 你的画 → 云（首屏不鼓：线留在真云上）
     const gIn = smooth(T0 + drawDur, T0 + drawDur + 1.2, t), nowMs = performance.now();
     gl.uniform1f(cardP.loc.uProg, art ? clamp((t - PAINT0) / PAINT, 0, 1) * 1.02 : 1);

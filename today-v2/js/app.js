@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=39';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=40';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -86,6 +86,7 @@ const board = new Board(fig, photo, {
   onPick: c => { setColor(c); setTool(lastTool); toast('Picked a color from the picture'); },
   onNote: what => { if (what === 'fill') toast('Close the shape first — the color would spill out.'); },
 });
+if (location.hostname === 'localhost' || params.has('debug')) window.__board = board;   // 测试、做宣传片时直接往画板里放画
 $('zoomReset').onclick = () => board.resetZoom();
 $('zoomIn').onclick = () => board.zoomBy(1.5);
 $('zoomOut').onclick = () => board.zoomBy(1 / 1.5);
@@ -405,7 +406,7 @@ $('share').onclick = async () => {
 $('stepIn').onclick = () => {
   count('inside');
   const opts = {
-    photo, board, count,
+    photo, board, count, realCloud: ITEM.kind === 'cloud',
     line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
     sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
     storeHref: `https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=${ctOf('inside')}&mt=8`,
