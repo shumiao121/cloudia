@@ -47,7 +47,7 @@ const CARD_VS = `attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uVP; vary
 // ① 沾一点周围天的颜色；② 越远蒙一层和身后同色的雾；③ 挡在太阳前面的那几朵身子暗下去、薄边透出金光（逆光）；
 // ④ 半透明的边染上身后的天色。线稿那一层（uCloud = 0）不动
 const CARD_FS = `precision highp float; varying vec2 vUV; varying vec3 vW;
-uniform sampler2D uT, uSB; uniform float uA, uRefl, uTime, uCloud, uTurn; uniform vec3 uTint, uEye, uSun;
+uniform sampler2D uT, uSB, uTM; uniform float uA, uRefl, uTime, uCloud, uTurn, uProg; uniform vec3 uTint, uEye, uSun;
 // 天的颜色只取糊过的那一张（64×16）：要的是「那一片天大概什么色」，不要身后那几朵真云的纹路——带纹路混进来，云像块玻璃
 vec3 sky(vec3 d){ d.y = abs(d.y); float u = fract(0.5 + atan(d.x, -d.z) / 6.2831853 + uTurn); float v = min(acos(clamp(d.y, 0.0, 1.0)) / 1.5707963, 0.97);
   return texture2D(uSB, vec2(u, v)).rgb; }
@@ -66,12 +66,14 @@ void main(){ vec2 uv = vUV;
   } else if (uCloud > 0.25 && uCloud < 0.75) {   // 云上的线：颜色照原样，只跟云一起蒙远处的雾
     vec3 rel = vW - uEye; float dist = length(rel);
     c.rgb = mix(c.rgb, sky(rel / dist), clamp(1.0 - exp(-dist * 0.035), 0.0, 0.35));
+  } else if (uCloud > 2.5) {   // 首屏那幅画（uCloud = 3）：时间图里比进度早的那些笔显出来——一笔笔画上去
+    a *= 1.0 - smoothstep(uProg, uProg + 0.02, texture2D(uTM, uv).r);
   }
   if (uRefl > 0.5) { a *= 0.42 * mix(0.12, 1.0, uv.y); c.rgb *= uTint; }   // 倒影：淡、靠水面那头最清楚
   if (a < 0.003) discard;
   // 光晕那一层（uCloud = 2）：一半相加、一半盖上去——纯相加在白云上加到顶就是白的，看不出是金光；
   // 盖上去一点，线周围的云被染成暖金，才读得出「亮着」
-  gl_FragColor = uCloud > 1.5 ? vec4(c.rgb * a, a * 0.5) : vec4(c.rgb * a, a); }`;
+  gl_FragColor = (uCloud > 1.5 && uCloud < 2.5) ? vec4(c.rgb * a, a * 0.5) : vec4(c.rgb * a, a); }`;
 
 // ---------- 把画变成云 ----------
 // 遮罩：画所在的地方（加粗一圈，细线也能长出云来）
@@ -222,16 +224,26 @@ function readingCloud(rd, seed) {
   return out;
 }
 
-export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null }) {
+// host：11-20 他要「打开网页先进到这个云世界，飘来一朵云、完成勾勒」——首屏版。给了 host（一个带 <canvas> 的元素）就是首屏：
+// 不弹全屏、不录像、不收手势（不挡页面滚动），开场是一朵真云（照片抠出来的）从右边飘进来，线一笔笔描上去，再鼓成云，
+// 转一圈，循环。skip：首屏演的那一幅本身也在「我们看见的」里，别再挂一份
+export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null, host = null, skip = null, art = null }) {
+  // art：11-20 首屏改演评审台里那幅「驮着小村子飞的鲸鱼妈妈」——{photo 抠好的真云, paint 只有画, time 每个像素第几笔, aspect}
+  // （tools/web/build_sky_gallery.py 出的）。画一点点显出来，不鼓成云；镜头只左右慢慢摆，不整圈转（他说转得晕）
+  const demo = !!host;
   const glc = mk(2, 2);
   const gl = glc.getContext('webgl', { antialias: true, alpha: false, premultipliedAlpha: true, preserveDrawingBuffer: true });
   if (!gl) return null;
   const bake = makePuffBaker(gl);   // 显卡不够（或着色器编不过）就退回贴纹理的那一版
-  const el = overlay(storeHref), cv = el.querySelector('canvas'), g = cv.getContext('2d');
-  el.classList.add('full');
+  let el, cv;
+  if (demo) {   // 首屏：画在 host 的 canvas 上；按钮、提示都是不进页面的空壳（下面的代码照常碰它们，不影响什么）
+    cv = host.querySelector('canvas'); el = document.createElement('div');
+    el.innerHTML = '<p class="inside-hint"></p><button class="inside-x"></button><div class="inside-bar"><button data-act="share"></button><button data-act="replay"></button></div>';
+  } else { el = overlay(storeHref); cv = el.querySelector('canvas'); el.classList.add('full'); }
+  const g = cv.getContext('2d');
   let FW, FH, RW = 1280, RH = 720, SC = 1, proj, tanX, tanY;
   const fit = () => {   // 按窗口定画布大小和视角：横屏竖着看 55°，竖屏横着看 64°
-    const dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth * dpr, h = innerHeight * dpr, k = Math.min(1, MAXPX / Math.max(w, h));
+    const dpr = Math.min(devicePixelRatio || 1, 2), w = (demo ? host.clientWidth : innerWidth) * dpr, h = (demo ? host.clientHeight : innerHeight) * dpr, k = Math.min(1, (demo ? 1920 : MAXPX) / Math.max(w, h));
     FW = Math.max(2, Math.round(w * k)); FH = Math.max(2, Math.round(h * k)); SC = Math.min(FW, FH) / 720;
     const fovy = FW >= FH ? 55 * Math.PI / 180 : 2 * Math.atan(Math.tan(32 * Math.PI / 180) / (FW / FH));
     tanY = Math.tan(fovy / 2); tanX = tanY * FW / FH; proj = perspective(fovy, FW / FH, 0.05, 200);
@@ -243,10 +255,13 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const rc = mk(RW, RH), rcg = rc.getContext('2d');   // 录像用的小一号画布（每次开录按当时窗口比例定尺寸）
   const bar = el.querySelector('.inside-bar'), shareBtn = bar.querySelector('[data-act=share]'), hint = el.querySelector('.inside-hint');
   el.hidden = false; bar.hidden = true; hint.hidden = true;
-  const prevOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden';
-  g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, FW, FH);
-  g.fillStyle = '#5D6771'; g.font = `${28 * SC}px -apple-system, system-ui, sans-serif`; g.textAlign = 'center'; g.fillText('Opening the sky…', FW / 2, FH / 2);
-  let pano, readings, level = 0;   // 0 小图 / 1 4096 / 2 两半合 8192
+  const prevOverflow = document.documentElement.style.overflow;
+  if (!demo) {
+    document.documentElement.style.overflow = 'hidden';
+    g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, FW, FH);
+    g.fillStyle = '#5D6771'; g.font = `${28 * SC}px -apple-system, system-ui, sans-serif`; g.textAlign = 'center'; g.fillText('Opening the sky…', FW / 2, FH / 2);
+  }
+  let pano, readings, gallery = null, galLater = null, level = 0;   // 0 小图 / 1 4096 / 2 两半合 8192
   // 11-19 线上实测：大图和小图一起下会抢带宽，慢网下点进去要 11 秒。改成排队：先下进场要的（小图、云纹理、18 幅），
   // 进场后再下 4096、它到了再下两半高清
   const big = new Image(), hd = PANO_HD.map(() => new Image());
@@ -257,10 +272,15 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     pano = new Image(); pano.src = PANO_SMALL;
     const texImg = new Image(); texImg.src = SKY_DIR + 'cloudtex.jpg';
     const texP = bake ? Promise.resolve() : Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
-    [readings] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
+    // 11-20 天上挂的换成评审台里他打 90 分的那几幅（画好的成图，sky/gallery/）；读不到退回「我们看见的」线稿云
+    // 带版本号：换过挂哪几幅以后，浏览器别拿缓存里的旧清单（11-20 测的时候羊群又出来了）
+    const galP = fetch('sky/gallery.json?v=2').then(r => r.json()).then(list => Promise.all(list.map(gi => { const im = new Image(); im.src = `sky/gallery/${gi.id}.webp?v=2`; return im.decode().then(() => ({ ...gi, img: im })); }))).catch(() => null);
+    // 11-20 他说首屏加载慢：首屏只等小图就开演（先勾一条简单的线），彩色插画在后台下，下好了再挂上去（镜头转过去时看到）
+    if (demo) { [readings] = await Promise.all([[], pano.decode(), texP]); galLater = galP; }
+    else [readings, gallery] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), galP, pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);
     startBig();
     let got = 0; bigP.then(v => { got = Math.max(got, v); }); hdP.then(v => { got = Math.max(got, v); });
-    await Promise.race([hdP, new Promise(r => setTimeout(r, 2500))]);   // 高清的最多再等 2.5 秒（快网这点时间够下完），没到就先进、到了再换
+    if (!demo) await Promise.race([hdP, new Promise(r => setTimeout(r, 2500))]);   // 高清的最多再等 2.5 秒（快网这点时间够下完），没到就先进、到了再换
     await new Promise(r => setTimeout(r, 0));
     level = got; if (level === 1) pano = big;
   } catch (_) { el.hidden = true; el.classList.remove('full'); removeEventListener('resize', onResize); document.documentElement.style.overflow = prevOverflow; return null; }
@@ -277,10 +297,23 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   const mineMask = fillInside(maskOf(fullArt, sx, sy, sw, sh, mine.width, mine.height, ox, pad, dw, dh, R * 0.5));
   let mineCloud = null;
   if (!bake) { mineCloud = mk(mine.width, mine.height); toCloud(mineMask, mineCloud, R, 7); }
+  // 首屏：那朵真云本身——照片按画的同一个比例摆上来，蓝天按白度抠掉（蓝天饱和、云发白），四边在留白里淡出
+  let photoCard = null;
+  if (demo && !art) {
+    photoCard = mk(mine.width, mine.height); const pg = photoCard.getContext('2d', { willReadFrequently: true });
+    pg.drawImage(photo, ox - sx * kk, pad - sy * kk, AW * kk, AH * kk);
+    const PW = photoCard.width, PH = photoCard.height, im = pg.getImageData(0, 0, PW, PH), d = im.data, fe = pad * 1.4;
+    for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+      const i = (y * PW + x) * 4, mx = Math.max(d[i], d[i + 1], d[i + 2], 1), wv = Math.min(d[i], d[i + 1], d[i + 2]) / mx;
+      const edge = smooth(0, 1, Math.min(x, PW - 1 - x, y, PH - 1 - y) / fe);
+      d[i + 3] = 255 * smooth(0.66, 0.88, wv) * smooth(0.25, 0.55, mx / 255) * edge;
+    }
+    pg.putImageData(im, 0, 0);
+  }
   const ops = board.strokes, ink = mk(AW, AH), fill = mk(AW, AH), live = mk(AW, AH), tmp = mk(AW, AH);
   const lenOf = s => { if (!s.p || s.p.length < 2 || s.t === 'fill' || s.t === 'shape') return 0; let L = 0; for (let i = 1; i < s.p.length; i++) L += Math.hypot((s.p[i][0] - s.p[i - 1][0]) * AW, (s.p[i][1] - s.p[i - 1][1]) * AH); return L; };
   const unit = ops.map(s => Math.max(lenOf(s), 40)), total = unit.reduce((a, b) => a + b, 0) || 1;
-  const T0 = 0.7, drawDur = ops.length ? clamp(total / 1300, 1.0, 2.6) : 0;
+  const T0 = demo ? 2.6 : 0.7, drawDur = ops.length ? (demo ? clamp(total / 600, 2.2, 3.6) : clamp(total / 1300, 1.0, 2.6)) : 0;
   let doneN = 0, lastF = -1;
   function drawOn(t) {   // 返回 true 表示卡片变了，要重新上传
     const f = clamp((t - T0) / Math.max(drawDur, 0.01), 0, 1);
@@ -301,10 +334,22 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
 
   // ---------- 卡片摆在哪：你的在正前方；「我们看见的」按黄金角绕一圈，远近高低错开，正前方留空 ----------
   const r = rng(29), cards = [];
-  const mineAspect = mine.width / mine.height, mineWidth = Math.min(2.8, 2.3 * mineAspect);
-  cards.push({ canvas: mine, cloud: mineCloud, x: 0, y: EYE + 0.25, z: -4.4, w: mineWidth, h: mineWidth / mineAspect, ph: 0, mine: true });
+  const mineAspect = art ? art.aspect : mine.width / mine.height, mineWidth = art ? 3.5 : Math.min(2.8, 2.3 * mineAspect);
+  cards.push({ canvas: mine, cloud: mineCloud, x: 0, y: EYE + (art ? 0.35 : 0.25), z: -4.4, w: mineWidth, h: mineWidth / mineAspect, ph: 0, mine: true });
   // 18 幅均匀绕一圈（正前方左右各留 34° 给你的画），一高一低、一近一远交替，挨着的两幅不会叠在一起
-  const pick = readings.slice(0, 18), N = pick.length, DIST = [6.5, 9.5, 7.5, 11];
+  // 评审台那几幅：均匀绕一圈（正前方左右各留 43°），一高一低、一近一远
+  // 11-20 他说「这样的画不协调」（火车和羊群挤在一起、太大）：少挂几幅（6 幅，挑在 build_sky_gallery.py），缩小、拉开——
+  // 相邻两幅隔 45° 左右，一幅只占二十来度；born：首屏晚到的那几幅从挂上那一刻起慢慢淡进来
+  const addGallery = (list) => {
+    const G = list.length, DG = [9.5, 11.5, 10.5, 12.5], rg = rng(41), n0 = cards.length;
+    list.forEach((gi, i) => {
+      const a = 0.85 + (i + 0.5) / G * (Math.PI * 2 - 1.7), d = DG[i % 4] + rg() * 0.5, w = (3.0 + rg() * 0.4) * (0.8 + d / 14), h = w / gi.aspect, y = i % 2 ? 3.0 + rg() * 0.4 : 2.2 + rg() * 0.3;
+      cards.push({ img: gi.img, art: true, x: Math.sin(a) * d, z: -Math.cos(a) * d, y: Math.max(h / 2 + 0.45, y), w, h, ph: rg() * 6.28, born: demo ? performance.now() : 0 });
+    });
+    return cards.slice(n0);
+  };
+  if (gallery && gallery.length) addGallery(gallery);
+  const pick = demo || (gallery && gallery.length) ? [] : readings.filter(rd => !(skip && rd.id === skip.id && rd.word === skip.word)).slice(0, 18), N = pick.length, DIST = [6.5, 9.5, 7.5, 11];
   pick.forEach((rd, i) => {
     const a = 0.6 + (i + 0.5) / N * (Math.PI * 2 - 1.2), d = DIST[i % 4] + r() * 0.8, rm = bake ? readingMask(rd) : null, c = rm ? rm.mask : readingCloud(rd, 100 + i), asp = c.width / c.height;
     const w = (2.3 + r() * 0.5) * (0.8 + d / 14), h = w / asp, y = i % 2 ? 3.5 + r() * 0.8 : 1.6 + r() * 0.4;
@@ -339,7 +384,9 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   // 捏云：每朵开场前画一次（正面），之后当贴图用。画不出来的那朵退回贴纹理
   const tB = performance.now();
   for (const c of cards) {
-    if (c.mine) { c.tex = texOf(c.canvas, false); const b = bake && bake(mineMask, 200, 7);
+    if (c.art) { c.tex = texOf(c.img, false); continue; }
+    if (c.mine && art) { c.tex = texOf(c.canvas, false); c.photoTex = texOf(art.photo, false); c.paintTex = texOf(art.paint, false); c.timeTex = texOf(art.time, false); continue; }
+    if (c.mine) { c.tex = texOf(c.canvas, false); if (photoCard) c.photoTex = texOf(photoCard, false); const b = bake && !demo && bake(mineMask, 200, 7);
       { const ml = mk(mine.width, mine.height); ml.getContext('2d').drawImage(fullArt, sx, sy, sw, sh, ox, pad, dw, dh); c.glowTex = texOf(glowOf(ml), false); }
       if (b) c.cloudTex = b.tex; else { if (!mineCloud) { mineCloud = mk(mine.width, mine.height); CLOUDTEX = null; toCloud(mineMask, mineCloud, R, 7); } c.cloudTex = texOf(mineCloud, false); } continue; }
     const b = c.puff && bake(c.canvas, 110, c.seed);
@@ -347,18 +394,32 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     if (b) c.tex = b.tex; else { if (c.puff) { const out = mk(c.canvas.width, c.canvas.height); toCloud(c.canvas, out, out.width * 0.036, c.seed); c.canvas = out; } c.tex = texOf(c.canvas, false); }
   }
   gl.finish(); const bakeMs = Math.round(performance.now() - tB);
+  if (galLater) galLater.then(list => { if (!list || !list.length || closed) return; for (const c of addGallery(list)) c.tex = texOf(c.img, false); });
   const cardBuf = gl.createBuffer(), verts = new Float32Array(30);
 
   // ---------- 镜头 ----------
   const cam = { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 };
   const TM = T0 + drawDur + 0.3, MORPH = 1.6;              // 画完 → 鼓成云
-  const T1 = TM + MORPH + 0.6, TURN = 16, TEND = T1 + TURN + 1.4;   // 一整圈 16 秒（每秒二十来度），回到你的云
+  const T1 = TM + MORPH + 0.6, TURN = 16;
+  // 首屏：2.6 秒起画，画 5 秒；停一下，镜头往一边慢慢摆 70°（10 秒，最快每秒十来度）、停 2.5 秒、再摆回来；一遍往右、一遍往左
+  const PAINT0 = 2.6, PAINT = 5.0, TPD = art ? PAINT0 + PAINT + 1.2 : T0 + drawDur + 1.8, SWING = 10, HOLD = 2.5;
+  const TEND = demo ? TPD + SWING + HOLD + SWING + 0.8 : T1 + TURN + 1.4;
+  let cycle = 0;   // 首屏循环第几遍（第一遍之后「我们看见的」不再淡入）   // 一整圈 16 秒（每秒二十来度），回到你的云
   let lastT = 0;
   function render(t) {
     const dt = clamp(t - lastT, 0, 0.1); lastT = t;
-    if (!cam.user && t <= TEND) { cam.yaw = Math.PI * 2 * ease((t - T1) / TURN); cam.pitch = 0.05 + 0.1 * Math.sin(Math.PI * clamp((t - T1) / TURN, 0, 1)); }
+    if (demo) {
+      // 11-20 他要「让用户自主滑动看 360 度」：拖过以后镜头归人管；停手 7 秒，慢慢回到自动的那条路上（追着走，不跳）
+      if (cam.user && !pts.size && performance.now() - cam.touchedAt > 7000) cam.user = false;
+      if (!cam.user) {
+        const sw = x => 0.5 - 0.5 * Math.cos(Math.PI * clamp(x, 0, 1));
+        const u = t < TPD ? 0 : t < TPD + SWING ? sw((t - TPD) / SWING) : t < TPD + SWING + HOLD ? 1 : 1 - sw((t - TPD - SWING - HOLD) / SWING);
+        const ty = (cycle % 2 ? -1 : 1) * 1.22 * u, tp = 0.06 + 0.04 * u, kk = Math.min(1, dt * 1.6), dy = Math.atan2(Math.sin(ty - cam.yaw), Math.cos(ty - cam.yaw));
+        cam.yaw += dy * kk; cam.pitch += (tp - cam.pitch) * kk;
+      }
+    } else if (!cam.user && t <= TEND) { cam.yaw = Math.PI * 2 * ease((t - T1) / TURN); cam.pitch = 0.05 + 0.1 * Math.sin(Math.PI * clamp((t - T1) / TURN, 0, 1)); }
     else if (!cam.user) cam.yaw += dt * 0.035;   // 开场完了没人碰：很慢地漂
-    cam.yaw += cam.vy; cam.pitch = clamp(cam.pitch + cam.vp, -0.9, 1.2); cam.vy *= 0.92; cam.vp *= 0.92;
+    cam.yaw += cam.vy; cam.pitch = clamp(cam.pitch + cam.vp, demo ? -0.3 : -0.9, demo ? 0.6 : 1.2); cam.vy *= 0.92; cam.vp *= 0.92;
     const cp = Math.cos(cam.pitch), dir = [Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), -Math.cos(cam.yaw) * cp];
     const eye = [cam.x, EYE, cam.z], L = lookAt(eye, [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]]), VP = mul(proj, L.m);
     gl.viewport(0, 0, FW, FH); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
@@ -378,14 +439,20 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     gl.enableVertexAttribArray(cardP.loc.aPos); gl.enableVertexAttribArray(cardP.loc.aUV);
     const rx = Math.cos(cam.yaw), rz = Math.sin(cam.yaw);   // 镜头的「右」（水平）
     const order = cards.map(c => ({ c, d: Math.hypot(c.x - cam.x, c.z - cam.z) })).sort((a, b) => b.d - a.d);
-    const m = smooth(TM, TM + MORPH, t);   // 你的画 → 云
+    const m = demo ? 0 : smooth(TM, TM + MORPH, t);   // 你的画 → 云（首屏不鼓：线留在真云上）
+    const gIn = smooth(T0 + drawDur, T0 + drawDur + 1.2, t), nowMs = performance.now();
+    gl.uniform1f(cardP.loc.uProg, art ? clamp((t - PAINT0) / PAINT, 0, 1) * 1.02 : 1);
     for (const refl of [1, 0]) for (const { c } of order) {
-      const pop = c.mine ? 1 : smooth(0, 0.6, t - 0.2), drift = Math.sin(t * 0.08 + c.ph) * 0.25;
+      const pop = c.born ? clamp((nowMs - c.born) / 1500, 0, 1) : c.mine || cycle > 0 ? 1 : smooth(0, 0.6, t - 0.2);
+      // 首屏：你的那朵从右边飘进来（前 2.4 秒），最后一秒淡掉，下一遍再飘进来
+      const fin = demo && c.mine ? smooth(0.1, 1.6, t) * (1 - smooth(TEND - 1.0, TEND - 0.1, t)) : 1;
+      const drift = Math.sin(t * 0.08 + c.ph) * 0.25 + (demo && c.mine ? 3.4 * (1 - ease(clamp(t / 2.4, 0, 1))) : 0);
       const y = c.y + Math.sin(t * 0.45 + c.ph) * 0.05, s = refl ? -1 : 1;
       // 你的画鼓成云以后，线还留在云上（颜色、笔刷都照原样，淡到 0.85）；「我们看见的」也带着淡淡的线
       // 光：画完鼓成云以后慢慢亮起来，之后很慢地一呼一吸（每朵错开）
       const breath = 0.82 + 0.18 * Math.sin(t * 1.1 + c.ph * 3.0);
-      const layers = c.mine ? [[c.cloudTex, m, 0.94 + 0.06 * m, 1], [c.glowTex, m * 0.9 * breath, 1, 2], [c.tex, 1 - 0.15 * m, 1, m > 0.01 ? 0.5 : 0]]
+      const layers = c.mine && art ? [[c.photoTex, fin, 1, 1], [c.paintTex, fin, 1, 3]]
+        : c.mine && demo ? [[c.photoTex, fin, 1, 1], [c.glowTex, fin * 0.55 * breath * gIn, 1, 2], [c.tex, fin, 1, 0.5]] : c.mine ? [...(c.photoTex ? [[c.photoTex, fin * (1 - m), 1, 1]] : []), [c.cloudTex, m * fin, 0.94 + 0.06 * m, 1], [c.glowTex, m * 0.9 * breath * fin, 1, 2], [c.tex, (1 - 0.15 * m) * fin, 1, m > 0.01 ? 0.5 : 0]]
         : c.linesTex ? [[c.tex, pop, 1, 1], [c.glowTex, pop * 0.45 * breath, 1, 2], [c.linesTex, pop * 0.55, 1, 0.5]] : [[c.tex, pop, 1, 1]];
       for (const [tex, alpha, k, isCloud] of layers) {
         if (alpha <= 0.002) continue;
@@ -394,6 +461,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
         verts.set([x0, yt, z0, 0, 0, x1, yt, z1, 1, 0, x0, yb, z0, 0, 1, x1, yt, z1, 1, 0, x1, yb, z1, 1, 1, x0, yb, z0, 0, 1]);
         gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
         gl.vertexAttribPointer(cardP.loc.aPos, 3, gl.FLOAT, false, 20, 0); gl.vertexAttribPointer(cardP.loc.aUV, 2, gl.FLOAT, false, 20, 12);
+        if (isCloud === 3) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, c.timeTex); gl.uniform1i(cardP.loc.uTM, 2); gl.activeTexture(gl.TEXTURE0); }
         gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1f(cardP.loc.uA, alpha); gl.uniform1f(cardP.loc.uRefl, refl); gl.uniform1f(cardP.loc.uCloud, isCloud);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
@@ -402,10 +470,10 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
 
     // 合到 2D 画布（录像录的是它）：从白里出来；结尾的字
     g.drawImage(glc, 0, 0);
-    const white = 1 - smooth(0, 0.8, t);
+    const white = demo ? 0 : 1 - smooth(0, 0.8, t);
     if (white > 0) { g.fillStyle = `rgba(250,249,245,${white})`; g.fillRect(0, 0, FW, FH); }
     const ta = smooth(TEND - 2.6, TEND - 1.8, t) * (1 - smooth(TEND + 0.8, TEND + 1.6, t));
-    if (ta > 0) {
+    if (ta > 0 && !demo) {
       g.globalAlpha = ta; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.shadowColor = 'rgba(255,255,255,0.8)'; g.shadowBlur = 14 * SC;
       let fs = 60 * SC; g.font = `600 ${fs}px Fraunces, Georgia, serif`;
       while (g.measureText(line).width > FW - 90 * SC && fs > 32 * SC) { fs -= 4 * SC; g.font = `600 ${fs}px Fraunces, Georgia, serif`; }
@@ -415,7 +483,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
       g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText('In the app, it lights up.', FW / 2, FH * 0.82 + 46 * SC);
       g.shadowBlur = 0; g.globalAlpha = 1;
     }
-    rcg.drawImage(cv, 0, 0, RW, RH);
+    if (!demo) rcg.drawImage(cv, 0, 0, RW, RH);
   }
 
   // ---------- 手势：拖动转头；两指 / 滚轮往前后走（在 6 米以内）；双击回正 ----------
@@ -432,14 +500,29 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   cv.onpointerup = up; cv.onpointercancel = up;
   cv.onwheel = e => { e.preventDefault(); cam.user = true; walk(-e.deltaY * 0.004); };
   cv.ondblclick = () => Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, vy: 0, vp: 0 });
+  if (demo) {
+    // 首屏：只收「拖」——横着拖转一圈，竖着拖抬头低头一点；不收滚轮、不收捏合（页面照常滚）。
+    // 手机上 canvas 是 touch-action: pan-y：竖着滑交给页面滚动（浏览器会发 pointercancel），横着滑才到这里
+    cv.onwheel = cv.ondblclick = null; cam.touchedAt = 0;
+    cv.onpointerdown = e => { if (e.button > 0) return; cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); cam.user = true; cam.touchedAt = performance.now(); host.classList.add('touched'); };
+    cv.onpointermove = e => {
+      const p = pts.get(e.pointerId); if (!p) return;
+      const dx = e.clientX - p[0], dy = e.clientY - p[1]; p[0] = e.clientX; p[1] = e.clientY;
+      const k = 2.0 / cv.getBoundingClientRect().width;   // 拖满一屏宽转 115° 左右
+      cam.yaw -= dx * k; cam.pitch = clamp(cam.pitch + dy * k * 0.6, -0.3, 0.6); cam.vy = -dx * k * 0.3; cam.vp = dy * k * 0.18; cam.touchedAt = performance.now();
+    };
+    const upD = e => { pts.delete(e.pointerId); cam.touchedAt = performance.now(); };
+    cv.onpointerup = upD; cv.onpointercancel = upD;
+  }
 
   // ---------- 播放、录像 ----------
-  const mime = pickMime();
+  const mime = demo ? null : pickMime();
   let raf = 0, start = 0, rec = null, file = null, url = null, closed = false, take = 0;
   function play() {
     bar.hidden = true; hint.hidden = true; file = null; lastF = -1; doneN = 0; lastT = 0;
-    { const k = 1280 / Math.max(FW, FH); RW = Math.round(FW * k / 2) * 2; RH = Math.round(FH * k / 2) * 2; rc.width = RW; rc.height = RH; }   // 这一遍录像的尺寸定住，中途拉窗口不变 for (const c of [ink, fill]) c.getContext('2d').clearRect(0, 0, AW, AH);
-    Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 });
+    { const k = 1280 / Math.max(FW, FH); RW = Math.round(FW * k / 2) * 2; RH = Math.round(FH * k / 2) * 2; rc.width = RW; rc.height = RH; }   // 这一遍录像的尺寸定住，中途拉窗口不变
+    for (const c of [ink, fill]) c.getContext('2d').clearRect(0, 0, AW, AH);   // 11-20 修：这句原来被注释吃掉了，重播一开头整幅画就在
+    if (!demo || cycle === 0) Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 });   // 首屏循环时不把人转着的镜头拽回去
     if (mime) {
       try {
         const chunks = [], mineTake = ++take;
@@ -461,6 +544,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   function frame(now) {
     if (closed) return;
     const t = at != null ? at : (now - start) / 1000;
+    if (demo && at == null && t >= TEND) { cycle++; play(); return; }   // 首屏：一遍完了从头再来
     render(t);
     if (t >= TEND && rec && rec.state === 'recording') rec.stop();
     if (t >= TEND - 0.4 && bar.hidden) { bar.hidden = false; if (!cam.user) hint.hidden = false; }
@@ -482,10 +566,16 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
   };
   const esc = e => { if (e.key === 'Escape') close(); };
-  addEventListener('keydown', esc);
+  if (!demo) addEventListener('keydown', esc);
   el.querySelector('.inside-x').onclick = close;
   play();
-  return { close, duration: TEND, cards: cards.length, bakeMs, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
+  // 首屏滚出视野时停下（省电），回来接着放
+  let paused = false, pausedAt = 0;
+  const pause = () => { if (paused || closed) return; paused = true; pausedAt = performance.now(); cancelAnimationFrame(raf); };
+  const resume = () => { if (!paused || closed) return; paused = false; start += performance.now() - pausedAt; raf = requestAnimationFrame(frame); };
+  // 首屏两边的箭头：转 d 弧度（给一下转速，按 0.92 每帧衰减，总共转 d），算人动过
+  const turn = d => { cam.user = true; cam.touchedAt = performance.now(); cam.vy += d * (1 - 0.92); };
+  return { close, pause, resume, turn, duration: TEND, cards: cards.length, bakeMs, cam, seek(t) { at = t; cam.user = false; Object.assign(cam, { x: 0, z: 0, vy: 0, vp: 0 }); frame(performance.now()); }, look(yaw, pitch, x = 0, z = 0) { at = TEND + 2; Object.assign(cam, { user: true, yaw, pitch, x, z, vy: 0, vp: 0 }); frame(performance.now()); } };
 }
 
 // 调云的样子时在页面里直接画几朵看（不进场景）

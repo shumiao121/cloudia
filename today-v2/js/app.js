@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=36';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=37';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -265,7 +265,7 @@ $('drawMore').onclick = () => { setStage('draw'); setTimeout(() => $('ask').scro
 $('skip').onclick = () => { said = ''; setStage('reveal'); };
 $('askForm').onsubmit = e => {
   e.preventDefault();
-  said = $('word').value.trim().replace(/\s+/g, ' ').slice(0, 24);
+  said = $('word').value.trim().replace(/\s+/g, ' ').replace(/^(a|an)\s+/i, '').replace(/[.!。]+$/, '').slice(0, 24);
   if (!said) { $('word').focus(); return; }
   $('word').blur(); setStage('reveal');
 };
@@ -316,7 +316,9 @@ function setStage(s, quiet = false) {   // quiet：读档时恢复到揭晓，�
 
 // ---------- 揭晓 ----------
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
-const named = w => /s$/i.test(w) ? w : `${article(w)} ${w}`;
+// 11-20 整体测试发现：输入框示例是「a whale, a dog…」，人照着打「a bird」就成了「You saw an a bird.」。
+// 存的时候把开头的 a/an 去掉（和我们看见的词对得上），自带 the/my/two… 的整句原样用
+const named = w => /s$/i.test(w) || /^(the|my|our|your|his|her|their|this|that|some|two|three|lots of)\s/i.test(w) ? w : `${article(w)} ${w}`;
 function showYou() {
   const ours = (ITEM.saw || []).map(s => s.word.toLowerCase());
   if (!said) { $('you').textContent = 'You kept it to yourself. Fair.'; return; }

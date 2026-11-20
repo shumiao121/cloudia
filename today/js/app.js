@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=28';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=37';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -117,6 +117,7 @@ function changed() {
   $('redo').disabled = !board.canRedo() || stage !== 'draw';
   $('clear').disabled = empty || stage !== 'draw';
   $('done').disabled = empty || stage !== 'draw';
+  $('exportBtn').disabled = empty;
   $('hint').style.opacity = empty && stage === 'draw' ? 1 : 0;
   $('bigBtn').hidden = stage !== 'draw';
   const objTab = tabNow === 'stickers' || tabNow === 'text';
@@ -260,10 +261,11 @@ $('redo').onclick = () => board.redo();
 $('clear').onclick = () => board.clear();
 $('done').onclick = () => { if (focused) setFocus(false); setStage('name'); count('done'); setTimeout(() => $('word').focus({ preventScroll: true }), 60); $('naming').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('back').onclick = () => setStage('draw');
+$('drawMore').onclick = () => { setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
 $('skip').onclick = () => { said = ''; setStage('reveal'); };
 $('askForm').onsubmit = e => {
   e.preventDefault();
-  said = $('word').value.trim().replace(/\s+/g, ' ').slice(0, 24);
+  said = $('word').value.trim().replace(/\s+/g, ' ').replace(/^(a|an)\s+/i, '').replace(/[.!。]+$/, '').slice(0, 24);
   if (!said) { $('word').focus(); return; }
   $('word').blur(); setStage('reveal');
 };
@@ -293,7 +295,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === ' ') { board.spaceDown = false; board._cursor(); } });
 
-function setStage(s) {
+function setStage(s, quiet = false) {   // quiet：读档时恢复到揭晓，不自动滚过去（11-20：首屏在上面，回来的人先看到首屏和画板）
   stage = s;
   $('dock').hidden = s !== 'draw';
   $('naming').hidden = s !== 'name';
@@ -307,14 +309,16 @@ function setStage(s) {
     $('stepWrap').hidden = board.isEmpty();
     $('stepLabel').textContent = ITEM.kind === 'oldsky' ? 'Step inside the painting' : 'Step inside your cloud';
     makePair();
-    setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    if (!quiet) setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   }
   changed();
 }
 
 // ---------- 揭晓 ----------
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
-const named = w => /s$/i.test(w) ? w : `${article(w)} ${w}`;
+// 11-20 整体测试发现：输入框示例是「a whale, a dog…」，人照着打「a bird」就成了「You saw an a bird.」。
+// 存的时候把开头的 a/an 去掉（和我们看见的词对得上），自带 the/my/two… 的整句原样用
+const named = w => /s$/i.test(w) || /^(the|my|our|your|his|her|their|this|that|some|two|three|lots of)\s/i.test(w) ? w : `${article(w)} ${w}`;
 function showYou() {
   const ours = (ITEM.saw || []).map(s => s.word.toLowerCase());
   if (!said) { $('you').textContent = 'You kept it to yourself. Fair.'; return; }
@@ -413,7 +417,8 @@ function rooms() {
     $('roomLine').textContent = lines[cur] || '';
     const room = M.rooms.find(r => r.id === cur); $('grid').innerHTML = '';
     for (const i of room.items) {
-      const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i); if (i === id) a.setAttribute('aria-current', 'true');
+      // 11-20 他说点下面别的云，打开还得先看最上面的动画：链接带 #ask，打开就停在画画区域（首屏等滚上去看见了才开始放）
+      const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i) + '#ask'; if (i === id) a.setAttribute('aria-current', 'true');
       const im = new Image(); im.loading = 'lazy'; im.alt = M.items[i].label || '';
       im.src = M.items[i].kind === 'paper' ? makePaper(i.replace('paper-', ''), 'wide', 0.18) : `thumbs/${i}.webp`;
       if (M.items[i].kind === 'paper') { im.alt = PAPERS[i.replace('paper-', '')].name + ' paper'; a.classList.add('paperthumb'); a.dataset.name = PAPERS[i.replace('paper-', '')].name; }
@@ -423,23 +428,41 @@ function rooms() {
   draw();
 }
 
-// ---------- 存取（只在这台设备上） ----------
-let restored = false;   // 读回存着的画以前一律不存：起步时切页签会触发 changed()，那时板子还是空的，存了就把旧画盖掉了
-function save() {
-  if (!store || !ITEM || !restored) return;
-  try {
-    const s = JSON.stringify({ board: board.toJSON(), stage: stage === 'name' ? 'draw' : stage, said, paper: paperKind, aspect });
-    if (s.length < 1.5e6) store.setItem(key, s);
-  } catch (_) {}
-}
+// ---------- 不存（11-20 他定：网页不做保留，给一个导出键让人自己存——也推人去用 app） ----------
+// 以前把画存在浏览器本地；现在一律不存，顺手把以前存下的清掉。离开页面前画了没导出过，浏览器会问一句
+let restored = false;
+function save() {}
 function restore() {
-  try {
-    const s = store && JSON.parse(store.getItem(key) || 'null');
-    if (s) { board.load(s.board); said = s.said || ''; started = !board.isEmpty(); }
-    restored = true;
-    if (s && s.stage === 'reveal') setStage('reveal');
-  } catch (_) { restored = true; }
+  try { if (store) for (const k of Object.keys(store)) if (k.startsWith('cloudia-v2-') && k !== 'cloudia-v2-carry') store.removeItem(k); } catch (_) {}
+  restored = true;
 }
+let exportedSig = '', leaving = false;
+const sigOf = () => { try { return JSON.stringify(board.toJSON()); } catch (_) { return ''; } };
+addEventListener('beforeunload', e => {
+  if (leaving || !board || board.isEmpty() || sigOf() === exportedSig) return;
+  e.preventDefault(); e.returnValue = '';
+});
+// 导出：原图那么大的一张 JPEG（云 + 你的画 + 角上一个小小的 Cloudia）；手机上走系统分享单（能存到相册），电脑上直接下载
+$('exportBtn').onclick = async () => {
+  if (board.isEmpty()) return;
+  count('export');
+  const W = ITEM.w, H = ITEM.h, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); board.composeInto(g, 0, 0, W, H);
+  const fs = Math.round(Math.max(W, H) * 0.022);
+  g.font = `600 ${fs}px Fraunces, Georgia, serif`; g.textAlign = 'right'; g.textBaseline = 'alphabetic';
+  g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = fs * 0.4; g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillText('Cloudia', W - fs * 0.9, H - fs * 0.8);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); if (!blob) return;
+  const name = `cloudia-${said ? said.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' : ''}${(ITEM.id || 'drawing')}.jpg`;
+  const file = new File([blob], name, { type: 'image/jpeg' });
+  exportedSig = sigOf();
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') { exportedSig = ''; return; } }
+  }
+  const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+  toast('Saved to your downloads.');
+};
 
 // ---------- 白纸：换纸、换画幅（下笔以前） ----------
 function paperControls() {
@@ -475,7 +498,7 @@ function setAspect(k) {
 // ---------- 白纸画完：放到一朵真云上 / 我们也看见过它 ----------
 function allSkies() { return M.rooms.filter(r => r.id !== 'blank').flatMap(r => r.items); }
 function thumbLink(i, onClick) {
-  const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i);
+  const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i) + '#ask';
   const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.webp`; im.alt = M.items[i].label ? `A sky where we saw ${named(M.items[i].label)}` : 'A sky'; a.appendChild(im);
   if (onClick) a.onclick = e => { e.preventDefault(); onClick(i); };
   return a;
@@ -507,9 +530,9 @@ function artPNG(maxLong = 1200) {
   return { canvas: o, ratio: cw / ch };
 }
 function carryOut(skyId) {
-  const art = artPNG(900); if (!art) { location.href = '?i=' + skyId; return; }
+  const art = artPNG(900); if (!art) { leaving = true; location.href = '?i=' + skyId + '#ask'; return; }
   try { localStorage.setItem('cloudia-v2-carry', JSON.stringify({ src: art.canvas.toDataURL('image/png'), ratio: art.ratio, said })); } catch (_) { toast('Your browser would not hold the drawing — try Save image instead.'); return; }
-  count('paper-to-sky'); location.href = '?i=' + encodeURIComponent(skyId);
+  count('paper-to-sky'); leaving = true; location.href = '?i=' + encodeURIComponent(skyId) + '#ask';
 }
 /** 到了云这页：把带来的画当贴纸摆上去，选中，让人拖到合适的地方 */
 function carryIn() {
@@ -568,7 +591,37 @@ function boot() {
     fitFigure($('ours'), ITEM.w, ITEM.h); bleed(); board.resize(1); previews(); if (stage === 'reveal') showOurs(showing);
   }, 150); });
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
+  // 从下面点了别的云（网址带 #ask）：直接停在画画区域。浏览器刷新时会把旧的滚动位置恢复回来盖掉锚点，所以自己再滚一次
+  if (location.hash === '#ask') { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; requestAnimationFrame(() => $('ask').scrollIntoView({ block: 'start' })); }
 }
+// ---------- 首屏：云世界（11-20）。页面先照常出来，等今天这朵的图加载完再起，免得抢带宽 ----------
+// 11-20 晚他说「加载慢」「先勾勒一个简单的图，转动后看到彩色的图」：首屏先在 cloud_21 那张真云上勾一条简单的鲸鱼
+// （sky/demo-line.json 几 KB），线画完亮一圈暖光；镜头摆过去才看到评审台那几幅彩色插画（sky.js 在后台下好再挂）
+async function startHero() {
+  const host = document.getElementById('hero'); if (!host) return;
+  if ('IntersectionObserver' in window) await new Promise(r => { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); r(); } }); io.observe(host); });
+  try {
+    const rd = await fetch('sky/demo-line.json?v=2').then(r => r.json());
+    const img = new Image(); img.src = `items/${rd.id}.webp`; await img.decode();
+    const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
+    const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
+    const w = await enterSky({ photo: img, board: fake, line: '', sub: '', host });
+    if (!w) return;
+    host.querySelector('canvas').classList.add('on'); setTimeout(() => host.classList.add('live'), 1200);
+    if (location.hostname === 'localhost' || params.has('debug')) window.__hero = w;
+    for (const b of host.querySelectorAll('[data-turn]')) b.onclick = () => { w.turn(+b.dataset.turn * Math.PI / 3); host.classList.add('touched'); count('hero-turn'); };
+    if ('IntersectionObserver' in window) new IntersectionObserver(es => { for (const e of es) e.isIntersecting ? w.resume() : w.pause(); }, { threshold: 0.05 }).observe(host);
+  } catch (_) {}
+}
+if (document.readyState === 'complete') setTimeout(startHero, 200); else addEventListener('load', () => setTimeout(startHero, 200), { once: true });
+// 首屏按钮：回到画板（11-20 他说「之前画过的，没看到画画的页面」——读档后停在揭晓那一步、画笔收起来了）。
+// 已经画过：画留着、画笔亮出来，接着画或者 Start over
+document.querySelector('.hero-go')?.addEventListener('click', e => {
+  count('hero-go');
+  // 画完了（停在揭晓）再点：新的一张画布
+  if (stage !== 'draw' && !paperMode) { e.preventDefault(); said = ''; board.clear(); setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }
+});
+
 let ITEM;
 if (paperMode) {
   // 存着的那张纸先读出来：纸色以网址为准（从屋子里点了别的纸），画幅以存档为准
