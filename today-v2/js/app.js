@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=29';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=30';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -260,6 +260,7 @@ $('redo').onclick = () => board.redo();
 $('clear').onclick = () => board.clear();
 $('done').onclick = () => { if (focused) setFocus(false); setStage('name'); count('done'); setTimeout(() => $('word').focus({ preventScroll: true }), 60); $('naming').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('back').onclick = () => setStage('draw');
+$('drawMore').onclick = () => { setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
 $('skip').onclick = () => { said = ''; setStage('reveal'); };
 $('askForm').onsubmit = e => {
   e.preventDefault();
@@ -293,7 +294,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === ' ') { board.spaceDown = false; board._cursor(); } });
 
-function setStage(s) {
+function setStage(s, quiet = false) {   // quiet：读档时恢复到揭晓，不自动滚过去（11-20：首屏在上面，回来的人先看到首屏和画板）
   stage = s;
   $('dock').hidden = s !== 'draw';
   $('naming').hidden = s !== 'name';
@@ -307,7 +308,7 @@ function setStage(s) {
     $('stepWrap').hidden = board.isEmpty();
     $('stepLabel').textContent = ITEM.kind === 'oldsky' ? 'Step inside the painting' : 'Step inside your cloud';
     makePair();
-    setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    if (!quiet) setTimeout(() => $('reveal').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   }
   changed();
 }
@@ -437,7 +438,7 @@ function restore() {
     const s = store && JSON.parse(store.getItem(key) || 'null');
     if (s) { board.load(s.board); said = s.said || ''; started = !board.isEmpty(); }
     restored = true;
-    if (s && s.stage === 'reveal') setStage('reveal');
+    if (s && s.stage === 'reveal') setStage('reveal', true);
   } catch (_) { restored = true; }
 }
 
@@ -570,17 +571,16 @@ function boot() {
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
 // ---------- 首屏：云世界（11-20）。页面先照常出来，等今天这朵的图加载完再起，免得抢带宽 ----------
-// 演的是「我们看见的」里那条鲸鱼（cloud_21 那张真云上描的），sky.js 的首屏模式：真云飘进来 → 一笔笔描 → 鼓成云 → 转一圈
+// 演的是评审台里那幅「驮着小村子飞的鲸鱼妈妈」（cloud_21 那张真云上画的）：真云飘进来 → 画一笔笔显出来 → 镜头左右慢慢摆
+// 素材是 tools/web/build_sky_gallery.py 出的 sky/demo-*（抠好的真云、只有画的一层、每个像素第几笔的时间图）
 async function startHero() {
   const host = document.getElementById('hero'); if (!host) return;
-  const DEMO = { id: 'cloud_21', word: 'whale' };
   try {
-    const rd = (await fetch('sky/readings.json').then(r => r.json())).find(x => x.id === DEMO.id && x.word === DEMO.word);
-    if (!rd) return;
-    const img = new Image(); img.src = `items/${DEMO.id}.webp`; await img.decode();
-    const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
-    const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
-    const w = await enterSky({ photo: img, board: fake, line: '', sub: '', host, skip: DEMO });
+    const meta = await fetch('sky/demo.json').then(r => r.json());
+    const load = src => { const im = new Image(); im.src = src; return im.decode().then(() => im); };
+    const [photo, paint, time] = await Promise.all(['sky/demo-photo.webp', 'sky/demo-paint.webp', 'sky/demo-time.png'].map(load));
+    const blank = { strokes: [], composeInto() {} };
+    const w = await enterSky({ photo, board: blank, line: '', sub: '', host, art: { photo, paint, time, aspect: meta.aspect } });
     if (!w) return;
     host.querySelector('canvas').classList.add('on');
     if (location.hostname === 'localhost' || params.has('debug')) window.__hero = w;
@@ -588,7 +588,12 @@ async function startHero() {
   } catch (_) {}
 }
 if (document.readyState === 'complete') setTimeout(startHero, 200); else addEventListener('load', () => setTimeout(startHero, 200), { once: true });
-document.querySelector('.hero-go')?.addEventListener('click', () => count('hero-go'));
+// 首屏按钮：回到画板（11-20 他说「之前画过的，没看到画画的页面」——读档后停在揭晓那一步、画笔收起来了）。
+// 已经画过：画留着、画笔亮出来，接着画或者 Start over
+document.querySelector('.hero-go')?.addEventListener('click', e => {
+  count('hero-go');
+  if (stage !== 'draw' && !paperMode) { e.preventDefault(); setStage('draw'); setTimeout(() => $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }
+});
 
 let ITEM;
 if (paperMode) {
