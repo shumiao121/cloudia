@@ -273,7 +273,8 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     const texImg = new Image(); texImg.src = SKY_DIR + 'cloudtex.jpg';
     const texP = bake ? Promise.resolve() : Promise.all([texImg.decode(), fetch(SKY_DIR + 'cloudtex.json').then(r => r.json())]).then(([, j]) => { CLOUDTEX = Array.isArray(j) ? { img: texImg, rects: j, key: null } : { img: texImg, rects: j.rects, key: j.key }; }).catch(() => { CLOUDTEX = null; });
     // 11-20 天上挂的换成评审台里他打 90 分的那几幅（画好的成图，sky/gallery/）；读不到退回「我们看见的」线稿云
-    const galP = fetch('sky/gallery.json').then(r => r.json()).then(list => Promise.all(list.map(gi => { const im = new Image(); im.src = `sky/gallery/${gi.id}.webp`; return im.decode().then(() => ({ ...gi, img: im })); }))).catch(() => null);
+    // 带版本号：换过挂哪几幅以后，浏览器别拿缓存里的旧清单（11-20 测的时候羊群又出来了）
+    const galP = fetch('sky/gallery.json?v=2').then(r => r.json()).then(list => Promise.all(list.map(gi => { const im = new Image(); im.src = `sky/gallery/${gi.id}.webp?v=2`; return im.decode().then(() => ({ ...gi, img: im })); }))).catch(() => null);
     // 11-20 他说首屏加载慢：首屏只等小图就开演（先勾一条简单的线），彩色插画在后台下，下好了再挂上去（镜头转过去时看到）
     if (demo) { [readings] = await Promise.all([[], pano.decode(), texP]); galLater = galP; }
     else [readings, gallery] = await Promise.all([fetch('sky/readings.json').then(r => r.json()), galP, pano.decode(), document.fonts.load('600 34px Fraunces').catch(() => {}), texP]);

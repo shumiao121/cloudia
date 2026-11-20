@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=31';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=32';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -578,7 +578,7 @@ function boot() {
 async function startHero() {
   const host = document.getElementById('hero'); if (!host) return;
   try {
-    const rd = await fetch('sky/demo-line.json').then(r => r.json());
+    const rd = await fetch('sky/demo-line.json?v=2').then(r => r.json());
     const img = new Image(); img.src = `items/${rd.id}.webp`; await img.decode();
     const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
     const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
