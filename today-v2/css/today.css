@@ -246,7 +246,14 @@ figure.board.loading img { opacity: 0; }
 .hero { position: relative; margin: 0; height: min(86svh, 860px); min-height: 440px; overflow: hidden;
   background: linear-gradient(180deg, #9db7d8 0%, #cdd7e2 40%, #ead7bb 49.5%, #b4c2d2 50.5%, #8ea6c2 100%); }
 .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 1s ease; touch-action: pan-y; }
-.hero canvas.on { opacity: 1; }
+.hero canvas.on { opacity: 1; cursor: grab; }
+.hero canvas.on:active { cursor: grabbing; }
+/* 拖着看的提示：首屏亮起来以后出现，拖过一次就收起 */
+.hero-hint { position: absolute; left: 50%; bottom: calc(max(5.5%, env(safe-area-inset-bottom, 0px)) + 62px); transform: translateX(-50%); margin: 0;
+  font-size: 13px; color: #24313c; background: rgba(255,255,255,.62); padding: 5px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap;
+  opacity: 0; transition: opacity .6s ease; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.hero.live .hero-hint { opacity: 1; }
+.hero.touched .hero-hint { opacity: 0; }
 .hero-text { position: absolute; left: 0; right: 0; top: max(4.5%, env(safe-area-inset-top, 0px)); padding: 0 max(16px, env(safe-area-inset-left, 0px));
   text-align: center; color: #1f2b35; pointer-events: none; text-shadow: 0 0 22px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
 .hero-brand { font-family: Fraunces, Georgia, serif; font-weight: 600; color: #7A4A0F; font-size: 18px; letter-spacing: .02em; margin: 0 0 4px; }

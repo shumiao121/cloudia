@@ -408,13 +408,18 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   let lastT = 0;
   function render(t) {
     const dt = clamp(t - lastT, 0, 0.1); lastT = t;
-    if (demo && !cam.user) {
-      const sw = x => 0.5 - 0.5 * Math.cos(Math.PI * clamp(x, 0, 1));
-      const u = t < TPD ? 0 : t < TPD + SWING ? sw((t - TPD) / SWING) : t < TPD + SWING + HOLD ? 1 : 1 - sw((t - TPD - SWING - HOLD) / SWING);
-      cam.yaw = (cycle % 2 ? -1 : 1) * 1.22 * u; cam.pitch = 0.06 + 0.04 * u;
+    if (demo) {
+      // 11-20 他要「让用户自主滑动看 360 度」：拖过以后镜头归人管；停手 7 秒，慢慢回到自动的那条路上（追着走，不跳）
+      if (cam.user && !pts.size && performance.now() - cam.touchedAt > 7000) cam.user = false;
+      if (!cam.user) {
+        const sw = x => 0.5 - 0.5 * Math.cos(Math.PI * clamp(x, 0, 1));
+        const u = t < TPD ? 0 : t < TPD + SWING ? sw((t - TPD) / SWING) : t < TPD + SWING + HOLD ? 1 : 1 - sw((t - TPD - SWING - HOLD) / SWING);
+        const ty = (cycle % 2 ? -1 : 1) * 1.22 * u, tp = 0.06 + 0.04 * u, kk = Math.min(1, dt * 1.6), dy = Math.atan2(Math.sin(ty - cam.yaw), Math.cos(ty - cam.yaw));
+        cam.yaw += dy * kk; cam.pitch += (tp - cam.pitch) * kk;
+      }
     } else if (!cam.user && t <= TEND) { cam.yaw = Math.PI * 2 * ease((t - T1) / TURN); cam.pitch = 0.05 + 0.1 * Math.sin(Math.PI * clamp((t - T1) / TURN, 0, 1)); }
     else if (!cam.user) cam.yaw += dt * 0.035;   // 开场完了没人碰：很慢地漂
-    cam.yaw += cam.vy; cam.pitch = clamp(cam.pitch + cam.vp, -0.9, 1.2); cam.vy *= 0.92; cam.vp *= 0.92;
+    cam.yaw += cam.vy; cam.pitch = clamp(cam.pitch + cam.vp, demo ? -0.3 : -0.9, demo ? 0.6 : 1.2); cam.vy *= 0.92; cam.vp *= 0.92;
     const cp = Math.cos(cam.pitch), dir = [Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), -Math.cos(cam.yaw) * cp];
     const eye = [cam.x, EYE, cam.z], L = lookAt(eye, [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]]), VP = mul(proj, L.m);
     gl.viewport(0, 0, FW, FH); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
@@ -495,7 +500,20 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
   cv.onpointerup = up; cv.onpointercancel = up;
   cv.onwheel = e => { e.preventDefault(); cam.user = true; walk(-e.deltaY * 0.004); };
   cv.ondblclick = () => Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, vy: 0, vp: 0 });
-  if (demo) { cv.onpointerdown = cv.onpointermove = cv.onpointerup = cv.onpointercancel = cv.onwheel = cv.ondblclick = null; }   // 首屏不收手势：页面照常滚
+  if (demo) {
+    // 首屏：只收「拖」——横着拖转一圈，竖着拖抬头低头一点；不收滚轮、不收捏合（页面照常滚）。
+    // 手机上 canvas 是 touch-action: pan-y：竖着滑交给页面滚动（浏览器会发 pointercancel），横着滑才到这里
+    cv.onwheel = cv.ondblclick = null; cam.touchedAt = 0;
+    cv.onpointerdown = e => { if (e.button > 0) return; cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); cam.user = true; cam.touchedAt = performance.now(); host.classList.add('touched'); };
+    cv.onpointermove = e => {
+      const p = pts.get(e.pointerId); if (!p) return;
+      const dx = e.clientX - p[0], dy = e.clientY - p[1]; p[0] = e.clientX; p[1] = e.clientY;
+      const k = 2.0 / cv.getBoundingClientRect().width;   // 拖满一屏宽转 115° 左右
+      cam.yaw -= dx * k; cam.pitch = clamp(cam.pitch + dy * k * 0.6, -0.3, 0.6); cam.vy = -dx * k * 0.3; cam.vp = dy * k * 0.18; cam.touchedAt = performance.now();
+    };
+    const upD = e => { pts.delete(e.pointerId); cam.touchedAt = performance.now(); };
+    cv.onpointerup = upD; cv.onpointercancel = upD;
+  }
 
   // ---------- 播放、录像 ----------
   const mime = demo ? null : pickMime();
@@ -504,7 +522,7 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
     bar.hidden = true; hint.hidden = true; file = null; lastF = -1; doneN = 0; lastT = 0;
     { const k = 1280 / Math.max(FW, FH); RW = Math.round(FW * k / 2) * 2; RH = Math.round(FH * k / 2) * 2; rc.width = RW; rc.height = RH; }   // 这一遍录像的尺寸定住，中途拉窗口不变
     for (const c of [ink, fill]) c.getContext('2d').clearRect(0, 0, AW, AH);   // 11-20 修：这句原来被注释吃掉了，重播一开头整幅画就在
-    Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 });
+    if (!demo || cycle === 0) Object.assign(cam, { x: 0, z: 0, yaw: 0, pitch: 0.04, user: false, vy: 0, vp: 0 });   // 首屏循环时不把人转着的镜头拽回去
     if (mime) {
       try {
         const chunks = [], mineTake = ++take;
