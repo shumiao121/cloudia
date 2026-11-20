@@ -4,19 +4,30 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=38';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=39';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
 const params = new URLSearchParams(location.search);
 const store = (() => { try { localStorage.setItem('__t', '1'); localStorage.removeItem('__t'); return localStorage; } catch (_) { return null; } })();
 
-// ---------- 计数器：只数动作，不带任何个人信息。GC 留空就什么都不发 ----------
-const GC = '';
-function count(name) {
+// ---------- 计数器：只数动作，不带任何个人信息（11-21 开了 GoatCounter，站点 getcloudia） ----------
+// 渠道标记：发帖的链接带 ?s=threads / ?s=ig 等。这一趟里点进别的云也带着（存在本标签页的 sessionStorage，关掉就没）；
+// 商店按钮的 ct 变成 web-<渠道>-<哪个按钮>，App Store Connect 里按渠道看下载；GoatCounter 里按 ref 看来访
+const GC = 'getcloudia';
+const SRC = (() => {
+  let s = (params.get('s') || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12);
+  try { if (s) sessionStorage.setItem('cloudia-src', s); else s = sessionStorage.getItem('cloudia-src') || ''; } catch (_) {}
+  return s;
+})();
+const ctOf = feature => SRC ? `web-${SRC}-${feature}` : `web-${feature}`;
+function beacon(path, event) {
   if (!GC) return;
-  try { navigator.sendBeacon(`https://${GC}.goatcounter.com/count?p=${encodeURIComponent('/today/' + name)}&e=true&rnd=${Math.random().toString(36).slice(2)}`); } catch (_) {}
+  const q = SRC ? `&q=${encodeURIComponent('?ref=' + SRC)}` : '', r = !event && document.referrer ? `&r=${encodeURIComponent(document.referrer)}` : '';
+  try { navigator.sendBeacon(`https://${GC}.goatcounter.com/count?p=${encodeURIComponent(path)}${event ? '&e=true' : ''}${q}${r}&rnd=${Math.random().toString(36).slice(2)}`); } catch (_) {}
 }
+function count(name) { beacon('/today/' + name, true); }
+beacon('/today/', false);   // 一次打开算一次访问
 
 // ---------- 今天是哪张 ----------
 function today() {
@@ -61,6 +72,8 @@ $('how').textContent = paperMode ? 'Start on paper. When you’re done, your dra
 if (android) { const s = $('store'); s.removeAttribute('href'); s.textContent = 'Cloudia is on iPhone & iPad'; s.style.opacity = .6; }
 if (ios) $('notIOS').hidden = true;
 $('store').addEventListener('click', () => count('store'));
+// 带了渠道标记：两个商店链接的 ct 换成 web-<渠道>-…
+for (const [eid, f] of [['store', 'v2'], ['appNoteLink', 'note']]) { const a = $(eid); if (a && a.href && SRC) a.href = a.href.replace(/ct=[^&]+/, 'ct=' + ctOf(f)); }
 for (const w of window.WORDS) { const o = document.createElement('option'); o.value = w; $('words').appendChild(o); }
 
 // ---------- 画板 ----------
@@ -395,7 +408,7 @@ $('stepIn').onclick = () => {
     photo, board, count,
     line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
     sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
-    storeHref: 'https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=web-inside&mt=8',
+    storeHref: `https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=${ctOf('inside')}&mt=8`,
   };
   // 天空之镜（全景图 + 浮在空中的 3D 画卡片）；没有 WebGL 或素材没加载上，退回粒子云，再退回平面推近
   const go = enterSky(opts).then(w => w || enterWorld(opts)).then(w => w || stepInside(opts));
