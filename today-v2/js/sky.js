@@ -5,6 +5,7 @@
 // 顶上被晚霞照成桃粉、底下蓝灰，和全景里的云同一种光；你的画先一笔一笔画出来，再鼓成一朵云。开场一圈从 7 秒放慢到 16 秒。
 // 开场这一段（约 21 秒）录成小视频。
 // 只用浏览器自带的 WebGL，不引库、不从别的网站加载。只动不亮（发光留给 app）。
+import { T } from './i18n.js?v=1';
 import { commitOp, drawStroke } from './board.js';
 import { perspective, lookAt, mul, compile, bboxOf, pickMime, overlay } from './world.js';
 import { makePuffBaker } from './puff.js?v=34';   // 11-19 他说贴纹理的云突兀：改成 app「捏一朵」那套 3D 云泡
@@ -227,7 +228,7 @@ function readingCloud(rd, seed) {
 // host：11-20 他要「打开网页先进到这个云世界，飘来一朵云、完成勾勒」——首屏版。给了 host（一个带 <canvas> 的元素）就是首屏：
 // 不弹全屏、不录像、不收手势（不挡页面滚动），开场是一朵真云（照片抠出来的）从右边飘进来，线一笔笔描上去，再鼓成云，
 // 转一圈，循环。skip：首屏演的那一幅本身也在「我们看见的」里，别再挂一份
-export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null, host = null, skip = null, art = null, realCloud = false }) {
+export async function enterSky({ photo, board, line, sub, storeHref, count = () => {}, at = null, host = null, skip = null, art = null, realCloud = false, outro = null }) {
   // realCloud：11-21 他说「云世界里要先有一朵云，然后再画画」——画在真云照片上的（不是旧画、白纸），点进来先是那朵真云（照片抠出来）
   // 浮在天上，线再一笔笔画上去，然后鼓成云。首屏一直是这样
   // art：11-20 首屏改演评审台里那幅「驮着小村子飞的鲸鱼妈妈」——{photo 抠好的真云, paint 只有画, time 每个像素第几笔, aspect}
@@ -501,8 +502,10 @@ export async function enterSky({ photo, board, line, sub, storeHref, count = () 
       g.fillStyle = '#28343E'; rows.forEach((x, i) => g.fillText(x, FW / 2, FH * 0.11 + i * fs * 1.12));
       const subY = FH * 0.11 + (rows.length - 1) * fs * 1.12 + 50 * SC;
       g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText(sub, FW / 2, subY);
-      g.font = `600 ${46 * SC}px Fraunces, Georgia, serif`; g.fillStyle = '#7A4A0F'; g.fillText('Cloudia', FW / 2, FH * 0.82);
-      g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText('In the app, it lights up.', FW / 2, FH * 0.82 + 46 * SC);
+      // 结尾两行：网页上自己录的片子推 app；宣传片（outro）推网页——11-21 他说先让人来网页玩，不是直接去 app
+      const [o1, o2] = outro || [T('Cloudia'), T('In the app, it lights up.')];
+      g.font = `600 ${46 * SC}px Fraunces, Georgia, serif`; g.fillStyle = '#7A4A0F'; g.fillText(o1, FW / 2, FH * 0.82);
+      g.font = `${27 * SC}px -apple-system, system-ui, sans-serif`; g.fillStyle = '#3C4652'; g.fillText(o2, FW / 2, FH * 0.82 + 46 * SC);
       g.shadowBlur = 0; g.globalAlpha = 1;
     }
     if (!demo) rcg.drawImage(cv, 0, 0, RW, RH);

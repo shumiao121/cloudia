@@ -1,3 +1,4 @@
+import { T } from './i18n.js?v=1';
 // 「走进云里」三维版（11-18 第二版，第一版平面推近被嫌不像 3D）：
 // 照片里的云变成几万个软边粒子堆成的立体云——每个粒子取照片上那一点的颜色，云越往里越厚（离云边越远越鼓），
 // 所以正对着看就是原来那张照片，一转就看得出厚度和侧面（背面稍暗）。你的画是一张有厚度的薄片，贴在云的正面。
@@ -339,8 +340,8 @@ export async function enterWorld({ photo, board, line, sub, storeHref, count = (
       while (g.measureText(line).width > FW - 90 && fs > 32) { fs -= 4; g.font = `600 ${fs}px Fraunces, Georgia, serif`; }
       g.fillStyle = '#28343E'; g.fillText(line, FW / 2, FH * 0.11);
       g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#4C5661'; g.fillText(sub, FW / 2, FH * 0.11 + 50);
-      g.font = '600 46px Fraunces, Georgia, serif'; g.fillStyle = '#945D16'; g.fillText('Cloudia', FW / 2, FH * 0.82);
-      g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#4C5661'; g.fillText('In the app, it lights up.', FW / 2, FH * 0.82 + 46);
+      g.font = '600 46px Fraunces, Georgia, serif'; g.fillStyle = '#945D16'; g.fillText(T('Cloudia'), FW / 2, FH * 0.82);
+      g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#4C5661'; g.fillText(T('In the app, it lights up.'), FW / 2, FH * 0.82 + 46);
       g.globalAlpha = 1;
     }
   }

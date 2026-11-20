@@ -263,6 +263,15 @@ figure.board.loading img { opacity: 0; }
 @keyframes htSway { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
 @media (max-width: 420px) { .ht-mid { font-size: 12.5px; } }
 @media (prefers-reduced-motion: reduce) { .ht-ico { animation: none; } }
+/* 11-21 语言：首屏右上角 EN / 中文（hero 本身是固定的浅色天，所以这里不跟深浅色走） */
+.lang { position: absolute; z-index: 2; top: max(14px, env(safe-area-inset-top, 0px)); right: max(14px, env(safe-area-inset-right, 0px));
+  display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.6); box-shadow: 0 2px 10px rgba(15,25,35,.12);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.lang button { border: 0; background: transparent; color: #1f2b35; font: 600 13px/1 -apple-system, system-ui, "PingFang SC", sans-serif;
+  padding: 7px 11px; border-radius: 999px; cursor: pointer; min-height: 30px; }
+.lang button[aria-pressed="true"] { background: #1f2a33; color: #fff; }
+.lang button:focus-visible { outline: 3px solid #ffd27a; outline-offset: 1px; }
+:lang(zh) .hero-h, :lang(zh) h1, :lang(zh) h2 { letter-spacing: .02em; }
 .hero-text { position: absolute; left: 0; right: 0; top: max(4.5%, env(safe-area-inset-top, 0px)); padding: 0 max(16px, env(safe-area-inset-left, 0px));
   text-align: center; color: #1f2b35; pointer-events: none; text-shadow: 0 0 22px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
 .hero-brand { font-family: Fraunces, Georgia, serif; font-weight: 600; color: #7A4A0F; font-size: 18px; letter-spacing: .02em; margin: 0 0 4px; }

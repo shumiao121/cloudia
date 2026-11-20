@@ -3,6 +3,7 @@
 // 停一下，冲进雾里，一片白；出来就在云里面了——只剩你的画在雾里漂，雾从身边飘过。
 // 整段画在一块 720×1280 的画布上，同时录成小视频（9:16，十三四秒），可以分享到 Threads / Reels。
 // 网页上只做「动」，不做「亮」：发光、月光留给 app，结尾一句「In the app, it lights up.」。
+import { T } from './i18n.js?v=1';
 import { commitOp } from './board.js';
 
 const FW = 720, FH = 1280, CY = 0.46;
@@ -285,8 +286,8 @@ export async function stepInside({ photo, board, line, sub, storeHref, count = (
     while (g.measureText(line).width > FW - 90 && fs > 32) { fs -= 4; g.font = `600 ${fs}px Fraunces, Georgia, serif`; }
     g.fillText(line, cx, FH * 0.12);
     g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#5D6771'; g.fillText(sub, cx, FH * 0.12 + 50);
-    g.globalAlpha = a2; g.font = '600 46px Fraunces, Georgia, serif'; g.fillStyle = '#945D16'; g.fillText('Cloudia', cx, FH * 0.8);
-    g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#5D6771'; g.fillText('In the app, it lights up.', cx, FH * 0.8 + 46);
+    g.globalAlpha = a2; g.font = '600 46px Fraunces, Georgia, serif'; g.fillStyle = '#945D16'; g.fillText(T('Cloudia'), cx, FH * 0.8);
+    g.font = '27px -apple-system, system-ui, sans-serif'; g.fillStyle = '#5D6771'; g.fillText(T('In the app, it lights up.'), cx, FH * 0.8 + 46);
     g.globalAlpha = 1;
     // 从白里出来
     if (ti < 0.9) { g.fillStyle = `rgba(250,249,245,${1 - smooth(0, 0.9, ti)})`; g.fillRect(0, 0, FW, FH); }

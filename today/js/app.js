@@ -4,7 +4,9 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=43';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=45';
+import { zh, T, W, toEn, WORDS_ZH, startI18n } from './i18n.js?v=1';
+startI18n();   // 11-21 中英两版：默认英文，首屏右上角切换   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -61,7 +63,7 @@ function makePaper(kind, asp, scale = 1) {
     for (let i = 1, y = step; y < H; y += step, i++) { g.fillStyle = i % 5 ? P.line : P.major; g.fillRect(0, Math.round(y), W, Math.max(1, scale * 1.5)); } }
   return c.toDataURL('image/png');
 }
-$('date').textContent = isToday ? day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ({ oldsky: 'Old skies', paper: 'Blank page' }[meta.kind] || 'Clouds');
+$('date').textContent = isToday ? day.toLocaleDateString(zh ? 'zh-CN' : 'en-US', zh ? { month: 'long', day: 'numeric', weekday: 'short' } : { weekday: 'short', month: 'short', day: 'numeric' }) : ({ oldsky: 'Old skies', paper: 'Blank page' }[meta.kind] || 'Clouds');
 
 const touchy = matchMedia('(pointer: coarse)').matches;
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -74,7 +76,7 @@ if (ios) $('notIOS').hidden = true;
 $('store').addEventListener('click', () => count('store'));
 // 带了渠道标记：两个商店链接的 ct 换成 web-<渠道>-…
 for (const [eid, f] of [['store', 'v2'], ['appNoteLink', 'note']]) { const a = $(eid); if (a && a.href && SRC) a.href = a.href.replace(/ct=[^&]+/, 'ct=' + ctOf(f)); }
-for (const w of window.WORDS) { const o = document.createElement('option'); o.value = w; $('words').appendChild(o); }
+for (const w of window.WORDS) { const o = document.createElement('option'); o.value = zh ? WORDS_ZH[w] || w : w; $('words').appendChild(o); }
 
 // ---------- 画板 ----------
 const photo = $('photo'), fig = $('mine');
@@ -279,7 +281,7 @@ $('drawMore').onclick = () => { setStage('draw'); setTimeout(() => $('ask').scro
 $('skip').onclick = () => { said = ''; setStage('reveal'); };
 $('askForm').onsubmit = e => {
   e.preventDefault();
-  said = $('word').value.trim().replace(/\s+/g, ' ').replace(/^(a|an)\s+/i, '').replace(/[.!。]+$/, '').slice(0, 24);
+  said = $('word').value.trim().replace(/\s+/g, ' ').replace(/^(a|an)\s+/i, '').replace(/[.!。！]+$/, '').slice(0, 32);
   if (!said) { $('word').focus(); return; }
   $('word').blur(); setStage('reveal');
 };
@@ -319,7 +321,7 @@ function setStage(s, quiet = false) {   // quiet：读档时恢复到揭晓，�
   tab(tabNow);
   if (s === 'reveal' && paperMode) { paperExits(); setTimeout(() => $('paperOut').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); }
   else if (s === 'reveal') {
-    showYou(); showOurs(Math.max(0, (ITEM.saw || []).findIndex(x => x.word.toLowerCase() === said.toLowerCase())));
+    showYou(); showOurs(Math.max(0, (ITEM.saw || []).findIndex(x => x.word.toLowerCase() === toEn(said).toLowerCase())));
     $('stepWrap').hidden = board.isEmpty();
     $('stepLabel').textContent = ITEM.kind === 'oldsky' ? 'Step inside the painting' : 'Step inside your cloud';
     makePair();
@@ -332,11 +334,12 @@ function setStage(s, quiet = false) {   // quiet：读档时恢复到揭晓，�
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
 // 11-20 整体测试发现：输入框示例是「a whale, a dog…」，人照着打「a bird」就成了「You saw an a bird.」。
 // 存的时候把开头的 a/an 去掉（和我们看见的词对得上），自带 the/my/two… 的整句原样用
-const named = w => /s$/i.test(w) || /^(the|my|our|your|his|her|their|this|that|some|two|three|lots of)\s/i.test(w) ? w : `${article(w)} ${w}`;
+const named = w => zh ? W(w) : /s$/i.test(w) || /^(the|my|our|your|his|her|their|this|that|some|two|three|lots of)\s/i.test(w) ? w : `${article(w)} ${w}`;
 function showYou() {
   const ours = (ITEM.saw || []).map(s => s.word.toLowerCase());
   if (!said) { $('you').textContent = 'You kept it to yourself. Fair.'; return; }
-  $('you').textContent = ours.includes(said.toLowerCase()) ? `You saw ${named(said)} — so did we.` : `You saw ${named(said)}.`;
+  const same = ours.includes(toEn(said).toLowerCase());
+  $('you').textContent = zh ? (same ? `你看见了${said}——我们也是。` : `你看见了${said}。`) : same ? `You saw ${named(said)} — so did we.` : `You saw ${named(said)}.`;
 }
 let showing = 0;
 function showOurs(i) {
@@ -352,7 +355,7 @@ function showOurs(i) {
 
 // ---------- 两张 4:5：先问，再答 ----------
 const PW = 1080, PH = 1350;
-function footerLine() { return ITEM.kind === 'oldsky' ? `${ITEM.credit.artist}, ${ITEM.credit.date} · The Met` : 'A real cloud · Cloudia'; }
+function footerLine() { return ITEM.kind === 'oldsky' ? `${ITEM.credit.artist}, ${ITEM.credit.date} · The Met` : T('A real cloud · Cloudia'); }
 async function picture(answer) {
   const c = document.createElement('canvas'); c.width = PW; c.height = PH;
   const g = c.getContext('2d');
@@ -369,12 +372,12 @@ async function picture(answer) {
   try { await document.fonts.load('600 64px Fraunces'); } catch (_) {}
   g.fillStyle = '#28343E'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
   g.font = '600 76px Fraunces, Georgia, serif';
-  const line = answer ? (said ? `I saw ${named(said)}.` : 'Here’s what I saw.') : 'What do you see?';
+  const line = answer ? (said ? (zh ? `我看见了${said}。` : `I saw ${named(said)}.`) : T('Here’s what I saw.')) : T('What do you see?');
   fitText(g, line, PW / 2, base + 110, PW - 120, 76);
   g.font = '28px -apple-system, system-ui, sans-serif'; g.fillStyle = '#5D6771';
-  g.fillText(answer ? footerLine() : (ITEM.kind === 'oldsky' ? 'A sky from an old painting. Guess first →' : 'A real cloud. Guess first →'), PW / 2, base + 168);
+  g.fillText(answer ? footerLine() : T(ITEM.kind === 'oldsky' ? 'A sky from an old painting. Guess first →' : 'A real cloud. Guess first →'), PW / 2, base + 168);
   g.font = '600 26px Fraunces, Georgia, serif'; g.fillStyle = '#945D16';
-  g.fillText('Cloudia', PW / 2, base + 222);
+  g.fillText(T('Cloudia'), PW / 2, base + 222);
   return new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
 }
 function fitText(g, t, x, y, maxW, size) {
@@ -398,7 +401,7 @@ $('share').onclick = async () => {
   if (!pair) await makePair();
   count('share');
   if (navigator.canShare && navigator.canShare({ files: pair })) {
-    try { await navigator.share({ files: pair, text: 'What do you see?' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: pair, text: T('What do you see?') }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   sheet();   // Threads、Instagram 自带的浏览器里常常没有分享单：给图，长按存
 };
@@ -407,8 +410,10 @@ $('stepIn').onclick = () => {
   count('inside');
   const opts = {
     photo, board, count, realCloud: ITEM.kind === 'cloud',
-    line: said ? `I saw ${named(said)}.` : (ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
-    sub: ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud',
+    // 录宣传片用（本机 ?promo）：结尾写网址，叫人来网页画
+    outro: params.has('promo') ? ['getcloudia.com', T('Draw on a real cloud. Free, in your browser.')] : null,
+    line: said ? (zh ? `我看见了${said}。` : `I saw ${named(said)}.`) : T(ITEM.kind === 'oldsky' ? 'Inside my sky.' : 'Inside my cloud.'),
+    sub: T(ITEM.kind === 'oldsky' ? 'Drawn on a sky from an old painting' : 'Drawn on a real cloud'),
     storeHref: `https://apps.apple.com/app/apple-store/id6818406818?pt=129298723&ct=${ctOf('inside')}&mt=8`,
   };
   // 天空之镜（全景图 + 浮在空中的 3D 画卡片）；没有 WebGL 或素材没加载上，退回粒子云，再退回平面推近
@@ -435,7 +440,7 @@ function rooms() {
       const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i) + '#ask'; if (i === id) a.setAttribute('aria-current', 'true');
       const im = new Image(); im.loading = 'lazy'; im.alt = M.items[i].label || '';
       im.src = M.items[i].kind === 'paper' ? makePaper(i.replace('paper-', ''), 'wide', 0.18) : `thumbs/${i}.webp`;
-      if (M.items[i].kind === 'paper') { im.alt = PAPERS[i.replace('paper-', '')].name + ' paper'; a.classList.add('paperthumb'); a.dataset.name = PAPERS[i.replace('paper-', '')].name; }
+      if (M.items[i].kind === 'paper') { im.alt = zh ? T(PAPERS[i.replace('paper-', '')].name) + '纸' : PAPERS[i.replace('paper-', '')].name + ' paper'; a.classList.add('paperthumb'); a.dataset.name = T(PAPERS[i.replace('paper-', '')].name); }
       a.appendChild(im); $('grid').appendChild(a);
     }
   };
@@ -464,7 +469,7 @@ $('exportBtn').onclick = async () => {
   const g = c.getContext('2d'); board.composeInto(g, 0, 0, W, H);
   const fs = Math.round(Math.max(W, H) * 0.022);
   g.font = `600 ${fs}px Fraunces, Georgia, serif`; g.textAlign = 'right'; g.textBaseline = 'alphabetic';
-  g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = fs * 0.4; g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillText('Cloudia', W - fs * 0.9, H - fs * 0.8);
+  g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = fs * 0.4; g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillText(T('Cloudia'), W - fs * 0.9, H - fs * 0.8);
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); if (!blob) return;
   const name = `cloudia-${said ? said.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' : ''}${(ITEM.id || 'drawing')}.jpg`;
   const file = new File([blob], name, { type: 'image/jpeg' });
@@ -513,19 +518,19 @@ function setAspect(k) {
 function allSkies() { return M.rooms.filter(r => r.id !== 'blank').flatMap(r => r.items); }
 function thumbLink(i, onClick) {
   const a = document.createElement('a'); a.href = '?i=' + encodeURIComponent(i) + '#ask';
-  const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.webp`; im.alt = M.items[i].label ? `A sky where we saw ${named(M.items[i].label)}` : 'A sky'; a.appendChild(im);
+  const im = new Image(); im.loading = 'lazy'; im.src = `thumbs/${i}.webp`; im.alt = M.items[i].label ? (zh ? `我们在这片天里看见了${W(M.items[i].label)}` : `A sky where we saw ${named(M.items[i].label)}`) : (zh ? '一片天' : 'A sky'); a.appendChild(im);
   if (onClick) a.onclick = e => { e.preventDefault(); onClick(i); };
   return a;
 }
 function paperExits() {
-  $('youPaper').textContent = said ? `You drew ${named(said)}.` : 'Nice one.';
+  $('youPaper').textContent = said ? (zh ? `你画了${said}。` : `You drew ${named(said)}.`) : 'Nice one.';
   const skies = [daily, ...allSkies().filter(i => i !== daily)];
   const fill = n => { $('skyPick').innerHTML = ''; for (const i of skies.slice(0, n)) $('skyPick').appendChild(thumbLink(i, carryOut)); $('moreSkies').hidden = n >= skies.length; };
   fill(8); $('moreSkies').onclick = () => fill(skies.length);
-  const w = said.toLowerCase(), hits = w ? allSkies().filter(i => (M.items[i].words || []).includes(w)) : [];
+  const w = toEn(said).toLowerCase(), hits = w ? allSkies().filter(i => (M.items[i].words || []).includes(w)) : [];
   $('sawToo').hidden = !hits.length;
   if (hits.length) {
-    $('sawTooTitle').textContent = `We saw ${named(said)} too — in ${hits.length === 1 ? 'this sky' : 'these skies'}`;
+    $('sawTooTitle').textContent = zh ? `我们也看见过${said}——在${hits.length === 1 ? '这片天' : '这几片天'}里` : `We saw ${named(said)} too — in ${hits.length === 1 ? 'this sky' : 'these skies'}`;
     $('sawTooGrid').innerHTML = ''; for (const i of hits.slice(0, 6)) $('sawTooGrid').appendChild(thumbLink(i, carryOut));
   }
 }
@@ -578,10 +583,10 @@ function credit() {
   const c = ITEM.credit, el = $('credit'); el.textContent = '';
   const a = document.createElement('a'); a.href = c.url; a.target = '_blank'; a.rel = 'noopener';
   if (ITEM.kind === 'oldsky') {
-    a.textContent = `${c.title}`; el.append(a, `, ${c.artist}, ${c.date}. The Metropolitan Museum of Art, Open Access (CC0).`);
+    a.textContent = `${c.title}`; el.append(a, zh ? `，${c.artist}，${c.date}。大都会艺术博物馆开放资源（CC0）。` : `, ${c.artist}, ${c.date}. The Metropolitan Museum of Art, Open Access (CC0).`);
     $('caption').textContent = `${c.title} — ${c.artist}, ${c.date} · The Met`; $('caption').hidden = false;
   } else {
-    a.textContent = c.title.replace(/\.(jpe?g|png)$/i, ''); el.append('Photo: ', a, ' (CC0, Wikimedia Commons)');
+    a.textContent = c.title.replace(/\.(jpe?g|png)$/i, ''); el.append(zh ? '照片：' : 'Photo: ', a, zh ? '（CC0，维基共享资源）' : ' (CC0, Wikimedia Commons)');
   }
 }
 function boot() {
@@ -589,7 +594,7 @@ function boot() {
   (ITEM.saw || []).forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = named(s.word); b.onclick = () => showOurs(i); $('chips').appendChild(b); });
   if (!paperMode) for (const f of [fig, $('ours')]) { f.style.backgroundImage = `url(thumbs/${ITEM.id}.webp)`; f.style.aspectRatio = `${ITEM.w} / ${ITEM.h}`; }
   fig.classList.add('loading');
-  photo.alt = ITEM.kind === 'oldsky' ? `${ITEM.credit.title}, a painting of the sky` : 'A real cloud';
+  photo.alt = ITEM.kind === 'oldsky' ? (zh ? `${ITEM.credit.title}，一幅画天空的画` : `${ITEM.credit.title}, a painting of the sky`) : T('A real cloud');
   fitFigure(fig, ITEM.w, ITEM.h); fitFigure($('ours'), ITEM.w, ITEM.h); bleed();
   photo.onload = () => {
     fig.classList.remove('loading');
