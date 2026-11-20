@@ -4,7 +4,7 @@ import { Board, PENS, FUN_PENS, PEN_NAMES, SHAPES, COLORS, sizeToWidth, drawStro
 import { STICKERS, PACKS, FONTS, icon, textRatio } from './stickers.js';
 import { stepInside } from './inside.js';
 import { enterWorld } from './world.js';
-import { enterSky } from './sky.js?v=28';   // sky.js 常改，带版本号免得浏览器用旧的
+import { enterSky } from './sky.js?v=29';   // sky.js 常改，带版本号免得浏览器用旧的
 
 const $ = id => document.getElementById(id);
 const M = window.MANIFEST;
@@ -569,6 +569,27 @@ function boot() {
   }, 150); });
   count(isToday ? 'view-today' : 'view-' + ITEM.kind);
 }
+// ---------- 首屏：云世界（11-20）。页面先照常出来，等今天这朵的图加载完再起，免得抢带宽 ----------
+// 演的是「我们看见的」里那条鲸鱼（cloud_21 那张真云上描的），sky.js 的首屏模式：真云飘进来 → 一笔笔描 → 鼓成云 → 转一圈
+async function startHero() {
+  const host = document.getElementById('hero'); if (!host) return;
+  const DEMO = { id: 'cloud_21', word: 'whale' };
+  try {
+    const rd = (await fetch('sky/readings.json').then(r => r.json())).find(x => x.id === DEMO.id && x.word === DEMO.word);
+    if (!rd) return;
+    const img = new Image(); img.src = `items/${DEMO.id}.webp`; await img.decode();
+    const ops = rd.strokes.map(p => ({ t: 'ink', c: '#1A1B24', w: 0.0065, p }));
+    const fake = { strokes: ops, composeInto(ctx, x, y, w, h) { ctx.save(); ctx.translate(x, y); for (const op of ops) drawStroke(ctx, op, w, h); ctx.restore(); } };
+    const w = await enterSky({ photo: img, board: fake, line: '', sub: '', host, skip: DEMO });
+    if (!w) return;
+    host.querySelector('canvas').classList.add('on');
+    if (location.hostname === 'localhost' || params.has('debug')) window.__hero = w;
+    if ('IntersectionObserver' in window) new IntersectionObserver(es => { for (const e of es) e.isIntersecting ? w.resume() : w.pause(); }, { threshold: 0.05 }).observe(host);
+  } catch (_) {}
+}
+if (document.readyState === 'complete') setTimeout(startHero, 200); else addEventListener('load', () => setTimeout(startHero, 200), { once: true });
+document.querySelector('.hero-go')?.addEventListener('click', () => count('hero-go'));
+
 let ITEM;
 if (paperMode) {
   // 存着的那张纸先读出来：纸色以网址为准（从屋子里点了别的纸），画幅以存档为准

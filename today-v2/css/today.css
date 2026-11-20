@@ -241,3 +241,20 @@ figure.board.loading img { opacity: 0; }
 .inside canvas { touch-action: none; cursor: grab; }
 /* 天空之镜：铺满整个窗口，跟着窗口变（电脑上用） */
 .inside.full canvas { width: 100vw; height: 100dvh; max-width: none; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+
+/* ---------- 首屏：云世界（11-20） ---------- */
+.hero { position: relative; margin: 0; height: min(86svh, 860px); min-height: 440px; overflow: hidden;
+  background: linear-gradient(180deg, #9db7d8 0%, #cdd7e2 40%, #ead7bb 49.5%, #b4c2d2 50.5%, #8ea6c2 100%); }
+.hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 1s ease; touch-action: pan-y; }
+.hero canvas.on { opacity: 1; }
+.hero-text { position: absolute; left: 0; right: 0; top: max(4.5%, env(safe-area-inset-top, 0px)); padding: 0 max(16px, env(safe-area-inset-left, 0px));
+  text-align: center; color: #1f2b35; pointer-events: none; text-shadow: 0 0 22px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
+.hero-brand { font-family: Fraunces, Georgia, serif; font-weight: 600; color: #7A4A0F; font-size: 18px; letter-spacing: .02em; margin: 0 0 4px; }
+.hero-h { font-size: clamp(28px, 4.4vw, 54px); line-height: 1.08; color: #1f2b35; }
+.hero-sub { font-size: clamp(15px, 1.5vw, 19px); max-width: 32em; margin: 8px auto 0; color: #2c3a46; }
+.hero-go { position: absolute; left: 50%; bottom: max(5.5%, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); white-space: nowrap;
+  background: #1f2a33; color: #fff; padding: 14px 24px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 16px;
+  box-shadow: 0 8px 28px rgba(15, 25, 35, .22); }
+.hero-go:hover { background: #2b3843; }
+.hero-go:focus-visible { outline: 3px solid #ffd27a; outline-offset: 3px; }
+#ask { scroll-margin-top: 12px; }
