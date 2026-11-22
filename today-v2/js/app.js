@@ -23,8 +23,10 @@ const SRC = (() => {
   return s;
 })();
 const ctOf = feature => SRC ? `web-${SRC}-${feature}` : `web-${feature}`;
+// 11-22：自己测的不算——本机预览（localhost、127.0.0.1、局域网 IP、file://）、带 ?debug / ?promo 的都不发（原来本机测一回就进了统计）
+const NOCOUNT = /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$|^(192\.168|10)\.|^$/.test(location.hostname) || params.has('debug') || params.has('promo');
 function beacon(path, event) {
-  if (!GC) return;
+  if (!GC || NOCOUNT) return;
   const q = SRC ? `&q=${encodeURIComponent('?ref=' + SRC)}` : '', r = !event && document.referrer ? `&r=${encodeURIComponent(document.referrer)}` : '';
   try { navigator.sendBeacon(`https://${GC}.goatcounter.com/count?p=${encodeURIComponent(path)}${event ? '&e=true' : ''}${q}${r}&rnd=${Math.random().toString(36).slice(2)}`); } catch (_) {}
 }
